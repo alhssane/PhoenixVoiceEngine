@@ -6,12 +6,13 @@ Audio Import Pipeline
 from pathlib import Path
 
 from src.analyzer.audio_inspector import AudioInspector
+from src.analyzer.audio_quality_engine import AudioQualityEngine
 from src.audio.auto_fix_engine import AutoFixEngine
 
 
 class AudioImportPipeline:
     """
-    Main pipeline for importing and preparing audio.
+    Main pipeline for importing, preparing, and evaluating audio.
 
     The original audio file is never modified.
     """
@@ -20,6 +21,7 @@ class AudioImportPipeline:
 
         self.inspector = AudioInspector()
         self.auto_fix = AutoFixEngine()
+        self.quality_engine = AudioQualityEngine()
 
     def run(self, audio_path: str):
 
@@ -31,14 +33,21 @@ class AudioImportPipeline:
                 f"File not found:\n{audio_path}"
             )
 
+        if not path.is_file():
+
+            raise ValueError(
+                f"Audio path is not a file:\n{audio_path}"
+            )
+
         print()
         print("=" * 60)
         print("Phoenix Audio Import Pipeline")
         print("=" * 60)
 
-        # --------------------------------------------------
-        # STEP 1: Inspect original audio
-        # --------------------------------------------------
+        # ==================================================
+        # STEP 1
+        # Inspect original audio
+        # ==================================================
 
         original_report = self.inspector.inspect(
             str(path)
@@ -48,22 +57,27 @@ class AudioImportPipeline:
         print("Original Audio")
         print("-" * 60)
 
-        self._print_report(original_report)
+        self._print_inspector_report(
+            original_report
+        )
 
-        # --------------------------------------------------
-        # STEP 2: Determine whether automatic preparation
-        # is required.
-        # --------------------------------------------------
+        # ==================================================
+        # STEP 2
+        # Determine automatic preparation
+        # ==================================================
 
-        needs_mono = original_report["channels"] != 1
+        needs_mono = (
+            original_report["channels"] != 1
+        )
 
         processed_path = None
         final_report = original_report
         auto_fixed = False
 
-        # --------------------------------------------------
-        # STEP 3: Automatic preparation
-        # --------------------------------------------------
+        # ==================================================
+        # STEP 3
+        # Automatic preparation
+        # ==================================================
 
         if needs_mono:
 
@@ -110,6 +124,7 @@ class AudioImportPipeline:
 
             print()
             print("Automatic Fix Completed")
+
             print(
                 f"Channels: "
                 f"{fix_report.original_channels} "
@@ -117,55 +132,123 @@ class AudioImportPipeline:
                 f"{fix_report.final_channels}"
             )
 
-            # --------------------------------------------------
-            # STEP 4: Inspect processed audio again
-            # --------------------------------------------------
+            # ==============================================
+            # STEP 4
+            # Inspect processed audio again
+            # ==============================================
 
             final_report = self.inspector.inspect(
                 processed_path
             )
 
-        # --------------------------------------------------
-        # STEP 5: Final report
-        # --------------------------------------------------
+        # ==================================================
+        # STEP 5
+        # Quality analysis
+        # ==================================================
+
+        quality_path = (
+            processed_path
+            if processed_path
+            else str(path)
+        )
+
+        print()
+        print("Audio Quality Analysis")
+        print("-" * 60)
+
+        quality_report = self.quality_engine.analyze(
+            quality_path
+        )
+
+        self._print_quality_report(
+            quality_report
+        )
+
+        # ==================================================
+        # STEP 6
+        # Final report
+        # ==================================================
 
         print()
         print("=" * 60)
         print("Final Audio Report")
         print("=" * 60)
 
-        self._print_report(final_report)
+        self._print_inspector_report(
+            final_report
+        )
 
         print()
 
         if auto_fixed:
 
             print(
-                "Auto Fix       : APPLIED"
+                "Auto Fix          : APPLIED"
             )
 
             print(
-                f"Processed File : {processed_path}"
+                f"Processed File    : "
+                f"{processed_path}"
             )
 
         else:
 
             print(
-                "Auto Fix       : NOT REQUIRED"
+                "Auto Fix          : NOT REQUIRED"
             )
 
         print()
 
-        if final_report["ready_for_training"]:
+        print(
+            f"Technical Score   : "
+            f"{quality_report.technical_score}/100"
+        )
+
+        print(
+            f"Signal Score      : "
+            f"{quality_report.signal_score}/100"
+        )
+
+        print(
+            f"Training Suitability: "
+            f"{quality_report.training_suitability}/100"
+        )
+
+        print(
+            f"Training Status   : "
+            f"{quality_report.status}"
+        )
+
+        print()
+
+        if quality_report.recommendations:
+
+            print("Recommendations")
+            print("-" * 60)
+
+            for recommendation in (
+                quality_report.recommendations
+            ):
+
+                print(
+                    f"- {recommendation}"
+                )
+
+        print()
+
+        if quality_report.status in {
+            "READY",
+            "READY_WITH_PROCESSING",
+        }:
 
             print(
-                "Training Ready : YES"
+                "Training Ready    : YES"
             )
 
         else:
 
             print(
-                "Training Ready : NO"
+                "Training Ready    : NO"
             )
 
         print("=" * 60)
@@ -173,12 +256,15 @@ class AudioImportPipeline:
         return {
             "original": original_report,
             "final": final_report,
+            "quality": quality_report.to_dict(),
             "auto_fixed": auto_fixed,
             "processed_path": processed_path,
         }
 
     @staticmethod
-    def _print_report(report: dict):
+    def _print_inspector_report(
+        report: dict,
+    ):
 
         print(
             f"File Name     : "
@@ -213,4 +299,54 @@ class AudioImportPipeline:
         print(
             f"Training Ready: "
             f"{'YES' if report['ready_for_training'] else 'NO'}"
+        )
+
+    @staticmethod
+    def _print_quality_report(
+        report,
+    ):
+
+        print(
+            f"Peak              : "
+            f"{report.peak_dbfs} dBFS"
+        )
+
+        print(
+            f"RMS               : "
+            f"{report.rms_dbfs} dBFS"
+        )
+
+        print(
+            f"Clipping Ratio    : "
+            f"{report.clipping_ratio}"
+        )
+
+        print(
+            f"Silence Ratio     : "
+            f"{report.silence_ratio}"
+        )
+
+        print(
+            f"Dynamic Range     : "
+            f"{report.dynamic_range_db} dB"
+        )
+
+        print(
+            f"Technical Score   : "
+            f"{report.technical_score}/100"
+        )
+
+        print(
+            f"Signal Score      : "
+            f"{report.signal_score}/100"
+        )
+
+        print(
+            f"Training Suitability: "
+            f"{report.training_suitability}/100"
+        )
+
+        print(
+            f"Status            : "
+            f"{report.status}"
         )
