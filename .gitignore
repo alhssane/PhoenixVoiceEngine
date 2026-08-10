@@ -1,31 +1,25 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+.pytest_cache/
 
-# Virtual Environment
-venv/
+# Virtual environments
 .venv/
+venv/
 env/
+
+# Models - downloaded/generated locally
+models/
+
+# Generated outputs
+outputs/
+
+# Local audio/workspace
+workspace/
 
 # IDE
 .vscode/
-.idea/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-
-# Build
-build/
-dist/
-
-# Phoenix Projects
-Projects/
-
-# Temporary
-workspace/
