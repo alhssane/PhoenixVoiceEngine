@@ -36,14 +36,14 @@ from src.analyzer.lyric_extractor import (
 # ============================================================
 
 SOURCE = Path(
-    r"F:\من بروتوز\مجلد جديد (2)\يامسهره مقطع.wav"
+    r"F:\مجلد جديد\كلمات جديده بصوت بندر.wav"
 )
 
 OUTPUT = (
     PROJECT_ROOT
     / "outputs"
     / "lyrics"
-    / "yamshara_lyrics.json"
+    / "bender_lyrics.json"
 )
 
 MODEL_SIZE = "large-v3"
