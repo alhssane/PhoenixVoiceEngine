@@ -1,5 +1,9 @@
-# Phoenix Voice Studio runtime dependencies
+# Phoenix Voice Studio baseline test/runtime dependencies
 soundfile>=0.12,<1
 mutagen>=1.47,<2
 numpy>=1.26,<3
+scipy>=1.11,<2
+librosa>=0.10,<1
+faster-whisper>=1.1,<2
+gradio>=5,<7
 pytest>=8,<9
