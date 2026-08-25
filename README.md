@@ -6,10 +6,11 @@ Phoenix Voice Studio is an AI singing-production workspace focused on analysis, 
 
 - **Project layer** — reproducible project folders and manifests.
 - **Audio layer** — inspection and preparation of clean vocal input.
-- **Arabic lyrics layer** — word-level transcription with timestamps.
+- **Arabic lyrics layer** — word-level transcription with timestamps and an Arabic G2P front-end.
 - **Performance analysis** — pitch/note/phrase/ornament-oriented analysis already present in `src/analysis`.
 - **Human lyric review** — existing review UI protects the original transcript.
 - **Synthesis boundary** — `src/synthesis/synthesis_backend.py` defines the contract for a real singing model.
+- **Production bridge** — `ProductionSingingBackend` writes a complete Arabic generation manifest and refuses to claim success without a real model and a valid WAV.
 - **Local UI** — `python app.py` launches the end-to-end workflow.
 
 ## Intended User Flow
@@ -19,8 +20,9 @@ Phoenix Voice Studio is an AI singing-production workspace focused on analysis, 
 3. Extract and review Arabic lyrics.
 4. Build the project analysis package.
 5. Enter new lyrics, a new couplet, or a full replacement section.
-6. Send the original vocal/melody reference and target lyrics to the configured singing backend.
-7. Validate and export the generated WAV.
+6. Preserve the reference melody/performance descriptors and send the request to the configured Arabic-capable singing backend.
+7. Render the generated WAV.
+8. Validate the output before export.
 
 ## Important Boundary
 
