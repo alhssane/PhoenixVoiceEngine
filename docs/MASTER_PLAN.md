@@ -1,108 +1,63 @@
 # Phoenix Voice Engine (PVE)
 
-Version: 0.1.0
-Status: Planning
+Version: 0.2.0
+Status: Active Engineering
 
----
+## Product Goal
 
-# Vision
+Phoenix Voice Engine is an AI singing-editing platform. The target workflow is:
 
-Phoenix Voice Engine is an AI platform designed to analyze, edit and regenerate singing while preserving the original performance style.
+**clean vocal → Arabic lyric transcription → performance analysis → human lyric review → neural singing edit → quality validation → final WAV**
 
-The long-term objective is to make it possible to:
+The system is designed for authorized recordings and voices only.
 
-- Analyze a complete song.
-- Extract lyrics with exact timing.
-- Extract phonemes.
-- Detect pitch.
-- Detect musical key.
-- Detect maqam (Arabic mode).
-- Detect vibrato.
-- Detect ornaments (melisma).
-- Detect breathing positions.
-- Learn singer performance style.
-- Edit lyrics.
-- Generate new singing using the edited lyrics.
-- Preserve the original musical style.
-- Preserve the original emotional performance.
-- Preserve the trained singer voice.
+## Milestones
 
----
+### Milestone 1 — Foundation
 
-# Main Goal
+- [x] Project manager
+- [x] Portable project paths
+- [x] Metadata protection
+- [x] Baseline CI
+- [x] Unit-test boundary
 
-The project is not a voice changer.
+### Milestone 2 — Analysis Package
 
-The project is an AI Singing Editing Engine.
+- [x] Audio inspection
+- [x] Arabic word-level transcription interface
+- [x] Pitch/note analysis modules
+- [x] Vocal signature analysis modules
+- [x] Maqam/quarter-tone analysis modules
+- [x] Lyric human-review UI
+- [x] Project manifest
 
----
+### Milestone 3 — Production Synthesis Boundary
 
-# Development Strategy
+- [x] Stable `SynthesisBackend` contract
+- [x] External command adapter
+- [x] End-to-end local UI
+- [ ] Select Arabic-capable neural singing backend
+- [ ] Benchmark timbre similarity
+- [ ] Benchmark melody/prosody preservation
+- [ ] Benchmark Arabic lyric intelligibility
+- [ ] Add post-generation quality gate
 
-The project will be developed in independent modules.
+### Milestone 4 — Release Candidate
 
-Each module must have:
+- [ ] GPU environment installer
+- [ ] Model download/cache manager
+- [ ] One-click project preparation
+- [ ] Full-section lyric editing
+- [ ] WAV/FLAC export presets
+- [ ] Regression audio benchmark set
+- [ ] Final acceptance test on authorized reference material
 
-- Documentation
-- Unit Tests
-- Configuration
-- Logging
-- API
+## Non-negotiable engineering rules
 
-No module may directly depend on another module unless officially documented.
-
----
-
-# Project Structure
-
-PhoenixVoiceEngine
-
-- Core
-- Audio Engine
-- Analyzer
-- Lyrics Engine
-- Pitch Engine
-- Style Engine
-- Generator
-- Voice Engine
-- UI
-- API
-
----
-
-# Current Milestone
-
-Milestone 1
-
-Build the project foundation.
-
-Tasks
-
-- Core
-- Config
-- Logger
-- Project Manager
-
----
-
-# Coding Philosophy
-
-Readable code.
-
-Maintainable code.
-
-Modular architecture.
-
-No duplicated code.
-
-Every module must be documented.
-
----
-
-Author
-
-Asoom Alhssane
-
-Lead Architecture
-
-OpenAI ChatGPT
+1. Never hardcode a developer's local Windows path into production code.
+2. Never fabricate an artist name, maqam, confidence, or quality score.
+3. Never treat a scalar voice score as a trained model.
+4. Never use word-file concatenation as a singing synthesizer.
+5. Never silently use a backend that does not support the requested language.
+6. Every model backend must have reproducible inference settings and an acceptance test.
+7. Generated audio must pass technical quality checks before export.

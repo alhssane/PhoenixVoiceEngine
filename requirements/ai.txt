@@ -1,0 +1,10 @@
+# Optional AI backends are isolated from the baseline test environment.
+# Keep model-specific dependencies in their own environment.
+#
+# Candidate research backends:
+# - Amphion / Vevo2: singing generation, SVC, editing
+# - SoulX-Singer: zero-shot singing/SVC
+# - YingMusic-Singer-Plus: lyric editing with melody preservation
+#
+# Install the selected backend in a dedicated environment and point
+# PHOENIX_SYNTH_COMMAND at its inference adapter.
