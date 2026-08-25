@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from src.synthesis.synthesis_backend import SynthesisBackend, SynthesisRequest, SynthesisResult
@@ -12,10 +11,8 @@ from src.synthesis.synthesis_backend import SynthesisBackend, SynthesisRequest, 
 class DiffSingerBackend(SynthesisBackend):
     """Production adapter for an externally installed DiffSinger/OpenVPI runner.
 
-    The runner is intentionally external: Phoenix owns alignment, Arabic G2P,
-    pitch/expression analysis and validation; the configured SVS model owns
-    neural waveform generation.  PHOENIX_DIFFSINGER_COMMAND may use the same
-    placeholders as CommandSynthesisBackend plus {phonemes}.
+    Phoenix owns alignment, Arabic G2P, pitch/expression analysis and
+    validation; the configured SVS model owns neural waveform generation.
     """
 
     name = "diffsinger"
@@ -31,7 +28,6 @@ class DiffSingerBackend(SynthesisBackend):
             raise RuntimeError(
                 "PHOENIX_DIFFSINGER_COMMAND is not configured for Arabic synthesis."
             )
-
         request.output_audio.parent.mkdir(parents=True, exist_ok=True)
         values: dict[str, Any] = {
             "reference_audio": str(request.reference_audio),
@@ -58,7 +54,6 @@ class DiffSingerBackend(SynthesisBackend):
             raise RuntimeError(
                 f"DiffSinger completed without creating {request.output_audio}"
             )
-
         return SynthesisResult(
             output_audio=request.output_audio,
             backend=self.name,
