@@ -96,19 +96,17 @@ def build_dataset(project: Path, output: Path) -> dict[str, Any]:
         name = f"freed_joud_{index:04d}"
         wav_path = raw_wavs / f"{name}.wav"
         sf.write(str(wav_path), segment, sr, subtype="PCM_16")
-        rows.append(
-            {
-                "name": name,
-                "start": round(start, 3),
-                "end": round(end, 3),
-                "duration": round(end - start, 3),
-                "words": " ".join(w["word"] for w in group),
-                "word_count": len(group),
-                "phonemes_ready": False,
-                "pitch_ready": False,
-                "status": "STAGING_ONLY",
-            }
-        )
+        rows.append({
+            "name": name,
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": round(end - start, 3),
+            "words": " ".join(w["word"] for w in group),
+            "word_count": len(group),
+            "phonemes_ready": False,
+            "pitch_ready": False,
+            "status": "STAGING_ONLY",
+        })
 
     if not rows:
         raise RuntimeError("No usable segments were produced")
@@ -125,6 +123,7 @@ def build_dataset(project: Path, output: Path) -> dict[str, Any]:
         "source_project": str(project),
         "source_audio": str(audio),
         "sample_rate": int(sr),
+        "channels": int(samples.shape[1]) if samples.ndim > 1 else 1,
         "source_duration": round(duration, 3),
         "source_word_count": len(words),
         "segment_count": len(rows),
