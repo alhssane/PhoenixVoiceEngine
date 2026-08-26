@@ -7,9 +7,6 @@ import shutil
 from pathlib import Path
 
 SPECIAL = {"SP", "AP", "<PAD>"}
-# Stage3 uses doubled vowels for long vowels and | as a word separator.
-# For the acoustic model, long-vowel duration is represented by ph_dur, so
-# aa/ii/uu are normalized to a/i/u and their durations are merged.
 NORMALIZE = {"aa": "a", "ii": "i", "uu": "u", "|": None}
 
 
@@ -73,13 +70,11 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    # Deterministic token indices. Reserve SP/AP/PAD at the front.
     core = sorted(p for p in phone_set if p not in SPECIAL)
     phonemes = ["SP", "AP", "<PAD>"] + core
     phonemes_path = output / "phonemes.txt"
     phonemes_path.write_text("\n".join(phonemes) + "\n", encoding="utf-8")
 
-    # Minimal language metadata for downstream integrations.
     phone_meta = {
         "language": "ar",
         "name": "phoenix_arabic_native",
