@@ -3,8 +3,12 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import shutil
 from pathlib import Path
+
+HEADER_WORDS = {"word", "words", "phoneme", "phonemes", "phone", "phones", "symbol", "symbols"}
+SPECIAL = {"SP", "AP", "<PAD>"}
 
 
 def discover_dictionaries(diff_root: Path) -> list[Path]:
@@ -17,16 +21,28 @@ def discover_dictionaries(diff_root: Path) -> list[Path]:
 
 
 def parse_dictionary(path: Path) -> set[str]:
+    """Parse common word->phoneme dictionary formats.
+
+    The left-hand word is not a phoneme; all tokens on the right-hand side are.
+    """
     phones: set[str] = set()
     try:
         for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            # Common dictionary forms: "PHONE\t...", "PHONE ...", or one token per line.
-            token = line.split("\t", 1)[0].split(None, 1)[0]
-            if token:
-                phones.add(token)
+            fields = [f for f in re.split(r"\t+", line) if f.strip()]
+            if len(fields) == 1:
+                fields = line.split()
+            if len(fields) < 2:
+                continue
+            rhs = []
+            for field in fields[1:]:
+                rhs.extend(field.split())
+            for tok in rhs:
+                tok = tok.strip()
+                if tok and tok.lower() not in HEADER_WORDS:
+                    phones.add(tok)
     except Exception:
         pass
     return phones
@@ -52,7 +68,7 @@ def main() -> None:
     if not dictionaries:
         raise FileNotFoundError(f"No DiffSinger dictionary files found under {diff_root}")
 
-    dict_union: set[str] = set()
+    dict_union: set[str] = set(SPECIAL)
     dictionary_stats = []
     for d in dictionaries:
         phones = parse_dictionary(d)
@@ -64,8 +80,8 @@ def main() -> None:
     unsupported: dict[str, list[str]] = {}
     valid_rows = []
     for r in rows:
-        phones = [p for p in r["ph_seq"].split() if p]
-        missing = sorted({p for p in phones if p not in dict_union})
+        phones = [p.strip() for p in r["ph_seq"].split() if p.strip()]
+        missing = sorted({p for p in phones if p not in dict_union and p not in SPECIAL})
         if missing:
             unsupported[r["name"]] = missing
         else:
@@ -91,7 +107,7 @@ def main() -> None:
 
     all_valid = len(valid_rows) == len(rows) and copied == len(rows)
     result = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "status": "PHONESET_VALIDATED" if all_valid else "PHONESET_BLOCKED",
         "source_segments": len(rows),
         "valid_segments": len(valid_rows),
@@ -104,12 +120,12 @@ def main() -> None:
         "output": str(output),
     }
     (output / "dataset_stage4.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({k: result[k] for k in ("status", "source_segments", "valid_segments", "dictionary_phone_count", "training_allowed", "next_gate")}, ensure_ascii=False, indent=2))
+    print(json.dumps({k: result[k] for k in ("status", "source_segments", "valid_segments", "copied_wavs", "dictionary_phone_count", "training_allowed", "next_gate")}, ensure_ascii=False, indent=2))
     if unsupported:
         print("UNSUPPORTED_PHONES:")
         for name, missing in unsupported.items():
             print(f"- {name}: {', '.join(missing)}")
-    
+
 
 if __name__ == "__main__":
     main()
