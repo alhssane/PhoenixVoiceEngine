@@ -15,9 +15,9 @@ $requirements = Join-Path $projectRoot 'requirements\requirements.txt'
 if (-not (Test-Path $python)) { throw "Phoenix GPU Python not found: $python" }
 if (-not (Test-Path $AudioPath)) { throw "Audio file not found: $AudioPath" }
 
-Write-Host '[Phoenix] Checking faster-whisper dependency...' -ForegroundColor Cyan
-& $python -m pip install faster-whisper
-if ($LASTEXITCODE -ne 0) { throw 'faster-whisper installation failed.' }
+Write-Host '[Phoenix] Installing/validating Phoenix runtime dependencies...' -ForegroundColor Cyan
+& $python -m pip install -r $requirements
+if ($LASTEXITCODE -ne 0) { throw 'Phoenix runtime dependency installation failed.' }
 
 Write-Host '[Phoenix] Syncing missing source tree from foundation branch...' -ForegroundColor DarkCyan
 $cacheRoot = Join-Path $projectRoot '.cache\foundation_sync_v2'
@@ -47,10 +47,6 @@ $rootEscaped = $projectRoot.Replace('\','\\')
 $importCode = "import sys; sys.path.insert(0, r'$rootEscaped'); import src.pipeline.song_project_engine; print('Source import: OK')"
 & $python -c $importCode
 if ($LASTEXITCODE -ne 0) { throw 'Phoenix source import failed.' }
-
-Write-Host '[Phoenix] Installing/validating Phoenix runtime dependencies...' -ForegroundColor Cyan
-& $python -m pip install -r $requirements
-if ($LASTEXITCODE -ne 0) { throw 'Phoenix runtime dependency installation failed.' }
 
 Write-Host '[Phoenix] Preparing reference song...' -ForegroundColor Cyan
 $audioFull = (Resolve-Path $AudioPath).Path
