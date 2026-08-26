@@ -68,11 +68,21 @@ def main() -> None:
     raw_posix = raw.as_posix()
     binary_posix = binary.as_posix()
 
+    dictionary = config.parent / 'phoenix_arabic_dictionary.txt'
+    dictionary.parent.mkdir(parents=True, exist_ok=True)
+    # DiffSinger requires a dictionary file for every declared language. The
+    # acoustic transcriptions already contain phoneme sequences directly; this
+    # compact entry registers the complete Arabic phone inventory for language
+    # `ar` without introducing a word-level lexicon that could alter ph_seq.
+    dictionary_line = 'PHOENIX_ARABIC\t' + ' '.join(extra)
+    dictionary.write_text(dictionary_line + '\n', encoding='utf-8')
+
     lines = [
         'base_config:',
         '  - configs/acoustic.yaml',
         '',
-        'dictionaries: {}',
+        'dictionaries:',
+        '  ar: ' + dictionary.as_posix(),
         'extra_phonemes:',
         *[f'  - {p}' for p in extra],
         'merged_phoneme_groups: []',
@@ -108,6 +118,8 @@ def main() -> None:
         'segments': len(rows),
         'phoneme_count': len(phones),
         'extra_phoneme_count': len(extra),
+        'dictionary_language': 'ar',
+        'dictionary': str(dictionary),
         'config': str(config),
         'binary_data_dir': str(binary),
         'diffsinger': str(ds),
