@@ -24,11 +24,10 @@ def main() -> None:
     config = Path(args.config).resolve()
     binary = Path(args.binary).resolve()
 
-    raw_data_dir = raw / 'raw'
-    csv_path = raw_data_dir / 'transcriptions.csv'
-    wavs = raw_data_dir / 'wavs'
-    phones_path = raw / 'phonemes.txt'
-    report_path = raw / 'dataset_stage5.json'
+    csv_path = raw / 'transcriptions.csv'
+    wavs = raw / 'wavs'
+    phones_path = raw.parent / 'phonemes.txt'
+    report_path = raw.parent / 'dataset_stage5.json'
 
     for p in (csv_path, wavs, phones_path, report_path):
         if not p.exists():
@@ -66,7 +65,7 @@ def main() -> None:
             raise RuntimeError(f'Unsupported phones in {name}: {sorted(set(bad))}')
 
     test_prefixes = [r['name'] for r in rows[-2:]] if len(rows) >= 3 else [rows[-1]['name']]
-    raw_posix = raw_data_dir.as_posix()
+    raw_posix = raw.as_posix()
     binary_posix = binary.as_posix()
 
     dictionary = config.parent / 'phoenix_arabic_dictionary.txt'
@@ -101,7 +100,7 @@ def main() -> None:
         'use_spk_id: false',
         'num_spk: 1',
         'val_with_vocoder: false',
-        'hnsep: null',
+        'hnsep: world',
         'hnsep_ckpt: null',
         'use_key_shift_embed: false',
         'use_speed_embed: false',
@@ -117,10 +116,11 @@ def main() -> None:
         'extra_phoneme_count': len(extra),
         'dictionary_language': 'ar',
         'dictionary': str(dictionary),
-        'raw_data_dir': str(raw_data_dir),
+        'raw_data_dir': str(raw),
         'config': str(config),
         'binary_data_dir': str(binary),
         'diffsinger': str(ds),
+        'hnsep': 'world',
         'training_allowed': False,
         'next_gate': 'DIFFSINGER_BINARIZE',
     }
