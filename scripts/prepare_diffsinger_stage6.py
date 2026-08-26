@@ -24,10 +24,15 @@ def main() -> None:
     config = Path(args.config).resolve()
     binary = Path(args.binary).resolve()
 
+    # Stage5 stores the actual DiffSinger raw artifacts under <dataset>\raw.
+    # Accept either the dataset root or the raw subdirectory for robustness.
+    raw_root = raw
+    if (raw / 'raw' / 'transcriptions.csv').exists():
+        raw = raw / 'raw'
     csv_path = raw / 'transcriptions.csv'
     wavs = raw / 'wavs'
-    phones_path = raw.parent / 'phonemes.txt'
-    report_path = raw.parent / 'dataset_stage5.json'
+    phones_path = raw_root / 'phonemes.txt'
+    report_path = raw_root / 'dataset_stage5.json'
 
     for p in (csv_path, wavs, phones_path, report_path):
         if not p.exists():
