@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+NORMALIZE = {"aa": "a", "ii": "i", "uu": "u", "|": None}
+
 
 def load_stage3_alignment(stage4: Path, name: str) -> tuple[float, float]:
     stage3 = stage4.parent / "freed_joud_diffsinger_stage3"
@@ -16,11 +18,26 @@ def load_stage3_alignment(stage4: Path, name: str) -> tuple[float, float]:
     if not path.exists():
         raise FileNotFoundError(f"Missing Stage3 alignment: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    aligned = [x for x in payload.get("alignment", []) if x.get("aligned") and float(x.get("duration", 0.0)) > 0]
-    if not aligned:
-        raise RuntimeError(f"No aligned span available for {name}")
-    start = min(float(x["start"]) for x in aligned)
-    end = max(float(x["end"]) for x in aligned)
+    phonemes = payload.get("phonemes", [])
+    alignment = payload.get("alignment", [])
+    if len(phonemes) != len(alignment):
+        raise RuntimeError(f"Stage3 phoneme/alignment mismatch for {name}")
+
+    kept = []
+    for phone, item in zip(phonemes, alignment):
+        normalized = NORMALIZE.get(phone, phone)
+        if normalized is None:
+            continue
+        if not item.get("aligned"):
+            continue
+        if float(item.get("duration", 0.0)) <= 0:
+            continue
+        kept.append(item)
+
+    if not kept:
+        raise RuntimeError(f"No usable aligned phoneme span available for {name}")
+    start = min(float(x["start"]) for x in kept)
+    end = max(float(x["end"]) for x in kept)
     if end <= start:
         raise RuntimeError(f"Invalid aligned span for {name}: {start}..{end}")
     return start, end
@@ -109,7 +126,7 @@ def main() -> None:
 
     max_error = max(x["coverage_error"] for x in durations_report)
     result = {
-        "schema_version": "0.5",
+        "schema_version": "0.6",
         "status": "RAW_DATASET_VALIDATED",
         "segment_count": len(rows),
         "wav_count": len(list(wavs.glob("*.wav"))),
@@ -119,7 +136,7 @@ def main() -> None:
         "segments": durations_report,
         "training_allowed": False,
         "next_gate": "DIFFSINGER_BINARIZE_CONFIG_AND_PREPROCESS",
-        "note": "Each WAV is cropped to the Stage3 CTC-aligned phoneme span before validating ph_dur coverage.",
+        "note": "Each WAV is cropped to the Stage3 CTC-aligned span of non-separator phonemes before validating ph_dur coverage.",
     }
     (output / "dataset_stage5.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: result[k] for k in ("status", "segment_count", "wav_count", "max_duration_coverage_error_sec", "training_allowed", "next_gate")}, ensure_ascii=False, indent=2))
