@@ -19,8 +19,15 @@ Write-Host '[Phoenix] Installing Phoenix runtime dependencies first...' -Foregro
 & $python -m pip install -r $requirements
 if ($LASTEXITCODE -ne 0) { throw 'Phoenix runtime dependency installation failed.' }
 
+# Explicitly install the modules required by the current pipeline. This keeps
+# the reference-preparation command resilient when the local requirements file
+# is older than the foundation branch.
+Write-Host '[Phoenix] Ensuring librosa, soundfile and faster-whisper...' -ForegroundColor Cyan
+& $python -m pip install 'librosa>=0.10,<1' 'soundfile>=0.12,<1' 'faster-whisper>=1.1,<2'
+if ($LASTEXITCODE -ne 0) { throw 'Core audio dependency installation failed.' }
+
 Write-Host '[Phoenix] Verifying required Python modules...' -ForegroundColor Cyan
-& $python -c "import librosa, soundfile, faster_whisper; print('Runtime imports: OK')"
+& $python -c "import librosa, soundfile, faster_whisper; print('Runtime imports: OK'); print('librosa:', librosa.__version__); print('soundfile:', soundfile.__version__)"
 if ($LASTEXITCODE -ne 0) { throw 'Required runtime modules are still unavailable.' }
 
 Write-Host '[Phoenix] Syncing missing source tree from foundation branch...' -ForegroundColor DarkCyan
@@ -36,7 +43,7 @@ if (-not $repoDir) { throw 'Could not locate extracted foundation branch.' }
 $sourceSrc = Join-Path $repoDir.FullName 'src'
 $targetSrc = Join-Path $projectRoot 'src'
 Get-ChildItem $sourceSrc -Recurse -File | ForEach-Object {
-    $relative = $_.FullName.Substring($sourceSrc.Length).TrimStart('\','/')
+    $relative = $_.FullName.Substring($sourceSrc.Length).TrimStart('\\','/')
     $destination = Join-Path $targetSrc $relative
     if (-not (Test-Path $destination)) {
         $destinationDir = Split-Path -Parent $destination
@@ -47,14 +54,14 @@ Get-ChildItem $sourceSrc -Recurse -File | ForEach-Object {
 }
 
 Write-Host '[Phoenix] Validating source import...' -ForegroundColor Cyan
-$rootEscaped = $projectRoot.Replace('\','\\')
+$rootEscaped = $projectRoot.Replace('\\','\\\\')
 $importCode = "import sys; sys.path.insert(0, r'$rootEscaped'); import src.pipeline.song_project_engine; print('Source import: OK')"
 & $python -c $importCode
 if ($LASTEXITCODE -ne 0) { throw 'Phoenix source import failed.' }
 
 Write-Host '[Phoenix] Preparing reference song...' -ForegroundColor Cyan
 $audioFull = (Resolve-Path $AudioPath).Path
-$audioEscaped = $audioFull.Replace('\','\\')
+$audioEscaped = $audioFull.Replace('\\','\\\\')
 $projectEscaped = $ProjectName.Replace("'", "''")
 $artistEscaped = $ArtistName.Replace("'", "''")
 $code = @"
