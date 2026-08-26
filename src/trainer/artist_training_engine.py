@@ -2,101 +2,70 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
-from src.analysis.real_note_extraction_engine import (
-    RealNoteExtractionEngine,
-)
+import soundfile as sf
 
-from src.analysis.syllable_detection_engine import (
-    SyllableDetectionEngine,
-)
-
-from src.voice.voice_dna_engine import (
-    VoiceDNAEngine,
-)
+from src.analysis.clean_vocal_signature_engine import CleanVocalSignatureEngine
+from src.analysis.real_note_extraction_engine import RealNoteExtractionEngine
+from src.analysis.syllable_detection_engine import SyllableDetectionEngine
 
 
 class ArtistTrainingEngine:
+    """Build a reproducible singer-analysis package from a clean vocal.
 
-    VERSION = "1.0.0"
+    The output is an analysis/profile package consumed by a synthesis backend.
+    It deliberately does not fabricate artist names, maqam labels, or quality
+    scores when the evidence is unavailable.
+    """
+
+    VERSION = "2.0.0"
 
     def train(
         self,
-        audio_path,
-        words_path,
-        output_path,
-    ):
-
+        audio_path: str | Path,
+        words_path: str | Path,
+        output_path: str | Path,
+        artist_name: str = "unknown",
+    ) -> dict[str, Any]:
         audio_path = Path(audio_path)
         words_path = Path(words_path)
         output_path = Path(output_path)
 
-        words = json.loads(
-            words_path.read_text(
-                encoding="utf-8",
-            )
-        )
+        if not audio_path.is_file():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        if not words_path.is_file():
+            raise FileNotFoundError(f"Words file not found: {words_path}")
 
-        notes = (
-            RealNoteExtractionEngine()
-            .analyze(
-                str(audio_path)
-            )
-        )
+        words = json.loads(words_path.read_text(encoding="utf-8"))
+        if not isinstance(words, list):
+            raise ValueError("Words file must contain a JSON list.")
 
-        syllables = (
-            SyllableDetectionEngine()
-            .analyze(
-                str(audio_path)
-            )
-        )
-
-        voice_profile = (
-            VoiceDNAEngine()
-            .build_profile(
-                timbre=0.90,
-                vibrato=0.85,
-                expression=0.95,
-                articulation=0.92,
-            )
-        )
-
-        duration = max(
-            item["end"]
-            for item in words
-        )
+        info = sf.info(str(audio_path))
+        notes = RealNoteExtractionEngine().analyze(str(audio_path))
+        syllables = SyllableDetectionEngine().analyze(str(audio_path))
+        signature = CleanVocalSignatureEngine().analyze(str(audio_path))
 
         profile = {
-            "artist": "fareed",
+            "schema_version": "2.0",
+            "artist": artist_name.strip() or "unknown",
             "audio_file": audio_path.name,
-            "duration": round(
-                duration,
-                2,
-            ),
-            "word_count": len(
-                words
-            ),
-            "syllable_count": len(
-                syllables
-            ),
-            "maqam": (
-                "hijaz_husayni"
-            ),
-            "note_distribution": (
-                notes
-            ),
-            "voice_profile": (
-                voice_profile
-            ),
+            "duration": round(float(info.duration), 3),
+            "sample_rate": int(info.samplerate),
+            "channels": int(info.channels),
+            "word_count": len(words),
+            "syllable_count": len(syllables),
+            "note_analysis": notes,
+            "vocal_signature": signature,
+            "lyrics": words,
+            "maqam": None,
+            "training_status": "ANALYSIS_READY",
+            "synthesis_model": None,
         }
 
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            json.dumps(
-                profile,
-                ensure_ascii=False,
-                indent=4,
-            ),
+            json.dumps(profile, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-
         return profile

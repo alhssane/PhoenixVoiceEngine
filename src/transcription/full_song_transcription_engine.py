@@ -1,156 +1,93 @@
+from __future__ import annotations
+
 import json
+import os
 from pathlib import Path
+from typing import Any
 
 from faster_whisper import WhisperModel
 
 
 class FullSongTranscriptionEngine:
+    """Arabic-first lyric transcription with portable model/output paths."""
 
-    VERSION = "1.0.0"
+    VERSION = "2.0.0"
+
+    def __init__(
+        self,
+        model_path: str | Path | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
+    ) -> None:
+        self.model_path = str(
+            model_path or os.getenv("PHOENIX_WHISPER_MODEL", "large-v3")
+        )
+        self.device = device or os.getenv("PHOENIX_WHISPER_DEVICE", "cpu")
+        self.compute_type = compute_type or os.getenv(
+            "PHOENIX_WHISPER_COMPUTE_TYPE", "int8"
+        )
+        self._model: WhisperModel | None = None
+
+    def _get_model(self) -> WhisperModel:
+        if self._model is None:
+            self._model = WhisperModel(
+                self.model_path,
+                device=self.device,
+                compute_type=self.compute_type,
+            )
+        return self._model
 
     def transcribe(
         self,
-        audio_path,
-    ):
+        audio_path: str | Path,
+        output_path: str | Path | None = None,
+        language: str = "ar",
+    ) -> dict[str, Any]:
+        audio_path = Path(audio_path)
+        if not audio_path.is_file():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        model = WhisperModel(
-
-            r"D:\PhoenixVoiceEngine\models\faster-whisper-large-v3",
-
-            device="cpu",
-
-            compute_type="int8",
-
-        )
-
+        model = self._get_model()
         segments, info = model.transcribe(
-
-            audio_path,
-
-            language="ar",
-
+            str(audio_path),
+            language=language,
             word_timestamps=True,
-
             vad_filter=True,
-
+            condition_on_previous_text=True,
         )
 
-        words = []
-
+        words: list[dict[str, Any]] = []
         for segment in segments:
-
-            if not segment.words:
-
-                continue
-
-            for word in segment.words:
-
-                if word.word is None:
-
-                    continue
-
-                text = word.word.strip()
-
+            for word in segment.words or []:
+                text = (word.word or "").strip()
                 if not text:
-
                     continue
-
-                start = round(
-
-                    float(word.start),
-
-                    2,
-
-                )
-
-                end = round(
-
-                    float(word.end),
-
-                    2,
-
-                )
-
+                start = round(float(word.start), 3)
+                end = round(float(word.end), 3)
                 words.append(
-
                     {
-
                         "word": text,
-
                         "start": start,
-
                         "end": end,
-
-                        "duration": round(
-
-                            end - start,
-
-                            2,
-
-                        ),
-
+                        "duration": round(max(0.0, end - start), 3),
                     }
-
                 )
 
-        output_dir = Path(
-
-            r"D:\PhoenixVoiceEngine\outputs\lyrics"
-
+        destination = Path(output_path) if output_path else (
+            audio_path.parent / f"{audio_path.stem}.words.json"
         )
-
-        output_dir.mkdir(
-
-            parents=True,
-
-            exist_ok=True,
-
-        )
-
-        output_file = (
-
-            output_dir
-
-            / "fareed_full_words.json"
-
-        )
-
-        with open(
-
-            output_file,
-
-            "w",
-
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            json.dumps(words, ensure_ascii=False, indent=2),
             encoding="utf-8",
-
-        ) as file:
-
-            json.dump(
-
-                words,
-
-                file,
-
-                ensure_ascii=False,
-
-                indent=4,
-
-            )
+        )
 
         return {
-
             "words": len(words),
-
-            "language": info.language,
-
-            "duration": round(
-
-                info.duration,
-
-                2,
-
+            "language": getattr(info, "language", language),
+            "language_probability": round(
+                float(getattr(info, "language_probability", 0.0)), 4
             ),
-
-            "output": str(output_file),
-
+            "duration": round(float(info.duration), 3),
+            "output": str(destination),
         }
