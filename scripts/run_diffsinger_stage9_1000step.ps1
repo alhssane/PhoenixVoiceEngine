@@ -30,7 +30,7 @@ try {
         --config $Config `
         --exp_name $expName `
         --reset `
-        --hparams "max_updates=1000,max_batch_frames=8000,max_batch_size=1,max_val_batch_frames=8000,max_val_batch_size=1,val_check_interval=25,num_sanity_val_steps=1,log_interval=25,ds_workers=1,dataloader_prefetch_factor=2,num_ckpt_keep=8,permanent_ckpt_start=999999,permanent_ckpt_interval=999999,val_with_vocoder=False,torch_dtype=float32"
+        --hparams "max_updates=1000,max_batch_frames=8000,max_batch_size=1,max_val_batch_frames=8000,max_val_batch_size=1,val_check_interval=25,num_sanity_val_steps=1,log_interval=25,ds_workers=1,dataloader_prefetch_factor=2,num_ckpt_keep=8,permanent_ckpt_start=999999,permanent_ckpt_interval=999999,val_with_vocoder=False"
     if ($LASTEXITCODE -ne 0) { throw 'Stage9 1000-step training failed.' }
 }
 finally {
