@@ -7,20 +7,36 @@ import shutil
 from pathlib import Path
 
 SPECIAL = {"SP", "AP", "<PAD>"}
-NORMALIZE = {"aa": "a", "ii": "i", "uu": "u", "|": None}
+NORMALIZE = {"aa": "a", "ii": "i", "uu": "u"}
+WORD_BOUNDARY = "|"
 
 
 def normalize_aligned(phonemes, alignment):
     out = []
+    pending_boundary = 0.0
     for phone, item in zip(phonemes, alignment):
+        duration = float(item.get("duration", 0.0))
+        if duration <= 0:
+            continue
+        if phone == WORD_BOUNDARY:
+            # Word boundaries are not emitted as DiffSinger phones, but their
+            # aligned time must remain represented. Carry it into the next
+            # emitted phone so total ph_dur still covers the aligned span.
+            pending_boundary += duration
+            continue
         phone = NORMALIZE.get(phone, phone)
         if phone is None:
+            pending_boundary += duration
             continue
-        duration = float(item.get("duration", 0.0))
+        duration += pending_boundary
+        pending_boundary = 0.0
         if out and out[-1]["phone"] == phone and phone in {"a", "i", "u"}:
             out[-1]["duration"] += duration
         else:
             out.append({"phone": phone, "duration": duration})
+
+    if pending_boundary > 0 and out:
+        out[-1]["duration"] += pending_boundary
     return out
 
 
@@ -81,12 +97,13 @@ def main():
         "phones": phonemes,
         "special": sorted(SPECIAL),
         "normalization": NORMALIZE,
+        "word_boundary_policy": "carry_boundary_duration_to_adjacent_emitted_phone",
         "source": "Stage3 Arabic CTC forced alignment",
     }
     (output / "phone_set.json").write_text(json.dumps(phone_meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     result = {
-        "schema_version": "0.3",
+        "schema_version": "0.4",
         "status": "ARABIC_PHONESET_READY",
         "segment_count": len(rows),
         "phoneme_count": len(phonemes),
