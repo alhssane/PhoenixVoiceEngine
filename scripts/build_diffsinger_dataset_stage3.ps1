@@ -18,12 +18,12 @@ if (-not (Test-Path $stage2)) { throw "Stage2 path not found: $stage2" }
 Write-Host '[Phoenix] Installing Stage3 compatibility dependencies...' -ForegroundColor Cyan
 # Current librosa in some Phoenix environments still imports pkg_resources.
 # Keep setuptools below the removal of pkg_resources so Stage3 is reproducible.
-& $python -m pip install --disable-pip-version-check 'setuptools<81' 'transformers>=4.40,<6' 'huggingface_hub>=0.30,<2' | Out-Host
+& $python -m pip install --disable-pip-version-check 'setuptools<81' 'soxr>=0.3.2' 'transformers>=4.40,<6' 'huggingface_hub>=0.30,<2' | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Stage3 dependency installation failed.' }
 
-Write-Host '[Phoenix] Verifying librosa import...' -ForegroundColor Cyan
-& $python -c "import librosa; print('librosa:', librosa.__version__)"
-if ($LASTEXITCODE -ne 0) { throw 'librosa import failed after compatibility install.' }
+Write-Host '[Phoenix] Verifying runtime imports...' -ForegroundColor Cyan
+& $python -c "import librosa, soxr, transformers; print('librosa:', librosa.__version__); print('soxr:', soxr.__version__); print('transformers:', transformers.__version__)"
+if ($LASTEXITCODE -ne 0) { throw 'Stage3 runtime imports failed after compatibility install.' }
 
 Write-Host '[Phoenix] Running Arabic phoneme CTC forced alignment...' -ForegroundColor Cyan
 & $python $script --stage1 $stage1 --stage2 $stage2 --output $output
