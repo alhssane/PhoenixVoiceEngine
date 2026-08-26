@@ -1,10 +1,10 @@
-$ErrorActionPreference = 'Stop'
-
 param(
     [Parameter(Mandatory=$true)][string]$AudioPath,
     [Parameter(Mandatory=$false)][string]$ProjectName = 'freed_joud_reference',
     [Parameter(Mandatory=$false)][string]$ArtistName = 'freed_joud'
 )
+
+$ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $projectRoot '.venv_phoenix_gpu\Scripts\python.exe'
@@ -20,7 +20,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Phoenix runtime dependency installation failed
 Write-Host '[Phoenix] Preparing reference song...' -ForegroundColor Cyan
 $code = @'
 import json
-import sys
 from pathlib import Path
 from src.pipeline.song_project_engine import SongProjectEngine
 
@@ -41,5 +40,6 @@ $code = $code.Replace('__ARTIST__', $ArtistName.Replace("'", "''"))
 & $python -c $code
 if ($LASTEXITCODE -ne 0) { throw 'Reference preparation failed.' }
 
+$projectPath = Join-Path $projectRoot ('Projects\' + $ArtistName + ' - ' + $ProjectName)
 Write-Host '[Phoenix] Reference project prepared.' -ForegroundColor Green
-Write-Host ("Project root: " + (Join-Path $projectRoot ('Projects\' + $ArtistName + '_' + $ProjectName))) -ForegroundColor Yellow
+Write-Host ("Project root: " + $projectPath) -ForegroundColor Yellow
