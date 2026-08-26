@@ -7,14 +7,14 @@ from typing import Any
 from src.project.project_manager import ProjectManager
 from src.transcription.full_song_transcription_engine import FullSongTranscriptionEngine
 from src.trainer.artist_training_engine import ArtistTrainingEngine
-from src.synthesis.command_backend import CommandSynthesisBackend
+from src.synthesis.hybrid_singing_backend import HybridSingingBackend
 from src.synthesis.synthesis_backend import SynthesisRequest, SynthesisResult
 
 
 class SongProjectEngine:
     """End-to-end project coordinator for clean-vocal lyric editing."""
 
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     def __init__(self, projects_root: str | Path = "Projects") -> None:
         self.projects_root = Path(projects_root)
@@ -54,7 +54,7 @@ class SongProjectEngine:
         )
 
         manifest = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "project": str(project),
             "audio": str(imported_audio),
             "lyrics": str(lyrics_path),
@@ -101,12 +101,21 @@ class SongProjectEngine:
             target_lyrics=target_lyrics,
             output_audio=output_path,
             language="ar",
+            preserve_style=True,
+            preserve_melody=True,
         )
-        backend = CommandSynthesisBackend()
+
+        # Production path: singing synthesis first, then conversion to the
+        # reference singer's timbre. Model-specific CLIs stay outside Phoenix.
+        backend = HybridSingingBackend()
         if not backend.supports("ar"):
             raise RuntimeError(
-                "Arabic singing synthesis backend is not configured. "
-                "Set PHOENIX_SYNTH_COMMAND to an authorized Arabic-capable "
-                "singing/editing backend before generating audio."
+                "Arabic hybrid singing backend is not configured. Set both "
+                "PHOENIX_SVS_COMMAND and PHOENIX_VC_COMMAND to real, "
+                "authorized Arabic-capable model runners before generating audio."
             )
-        return backend.synthesize(request)
+
+        result = backend.synthesize(request)
+        if result.output_audio.stat().st_size == 0:
+            raise RuntimeError("Synthesis produced an empty output file.")
+        return result
