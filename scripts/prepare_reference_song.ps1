@@ -11,33 +11,37 @@ $python = Join-Path $projectRoot '.venv_phoenix_gpu\Scripts\python.exe'
 $requirements = Join-Path $projectRoot 'requirements\requirements.txt'
 $branch = 'foundation-hardening'
 $rawBase = "https://raw.githubusercontent.com/alhssane/PhoenixVoiceEngine/$branch"
+$tempRoot = Join-Path $projectRoot '.cache\foundation_sync'
+$zipPath = Join-Path $projectRoot '.cache\foundation-hardening.zip'
 
 if (-not (Test-Path $python)) { throw "Phoenix GPU Python not found: $python" }
 if (-not (Test-Path $AudioPath)) { throw "Audio file not found: $AudioPath" }
 
-# Sync the orchestration layer into the working copy without touching unrelated local files.
-$requiredFiles = @(
-    'src/pipeline/song_project_engine.py',
-    'src/synthesis/synthesis_backend.py',
-    'src/synthesis/hybrid_singing_backend.py',
-    'src/project/project_manager.py',
-    'src/transcription/full_song_transcription_engine.py',
-    'src/trainer/artist_training_engine.py',
-    'src/analysis/clean_vocal_signature_engine.py',
-    'src/analysis/real_note_extraction_engine.py',
-    'src/analysis/syllable_detection_engine.py'
-)
+# Sync the source tree safely: only missing local files are copied from the
+# foundation branch, so unrelated local edits are never overwritten.
+if (-not (Test-Path (Join-Path $projectRoot 'src\pipeline\song_project_engine.py'))) {
+    Write-Host '[Phoenix] Local source tree is behind foundation branch; syncing missing src files...' -ForegroundColor DarkCyan
+    New-Item -ItemType Directory -Path (Split-Path $zipPath -Parent) -Force | Out-Null
+    if (Test-Path $tempRoot) { Remove-Item $tempRoot -Recurse -Force }
+    Invoke-WebRequest -Uri "https://github.com/alhssane/PhoenixVoiceEngine/archive/refs/heads/$branch.zip" -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath $tempRoot -Force
+    $extractedRoot = Get-ChildItem $tempRoot -Directory | Select-Object -First 1
+    if (-not $extractedRoot) { throw 'Could not locate extracted foundation branch.' }
 
-foreach ($relativePath in $requiredFiles) {
-    $destination = Join-Path $projectRoot ($relativePath -replace '/', '\\')
-    $destinationDir = Split-Path -Parent $destination
-    if (-not (Test-Path $destinationDir)) {
-        New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+    $sourceSrc = Join-Path $extractedRoot.FullName 'src'
+    $targetSrc = Join-Path $projectRoot 'src'
+    if (-not (Test-Path $sourceSrc)) { throw 'Foundation branch does not contain src/.' }
+
+    Get-ChildItem $sourceSrc -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($sourceSrc.Length).TrimStart('\','/')
+        $destination = Join-Path $targetSrc $relative
+        $destinationDir = Split-Path -Parent $destination
+        if (-not (Test-Path $destination)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+            Copy-Item $_.FullName $destination
+            Write-Host "[Phoenix] Added missing source: src\$relative" -ForegroundColor DarkCyan
+        }
     }
-
-    $uri = "$rawBase/$relativePath"
-    Write-Host "[Phoenix] Syncing $relativePath" -ForegroundColor DarkCyan
-    Invoke-WebRequest -Uri $uri -OutFile $destination
 }
 
 Write-Host '[Phoenix] Installing/validating Phoenix runtime dependencies...' -ForegroundColor Cyan
@@ -56,7 +60,6 @@ project_name = r'''__PROJECT__'''
 artist_name = r'''__ARTIST__'''
 
 sys.path.insert(0, str(root))
-
 from src.pipeline.song_project_engine import SongProjectEngine
 
 engine = SongProjectEngine(root / 'Projects')
