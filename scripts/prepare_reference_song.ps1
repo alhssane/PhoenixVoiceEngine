@@ -9,27 +9,35 @@ param(
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $projectRoot '.venv_phoenix_gpu\Scripts\python.exe'
 $requirements = Join-Path $projectRoot 'requirements\requirements.txt'
+$branch = 'foundation-hardening'
+$rawBase = "https://raw.githubusercontent.com/alhssane/PhoenixVoiceEngine/$branch"
 
 if (-not (Test-Path $python)) { throw "Phoenix GPU Python not found: $python" }
 if (-not (Test-Path $AudioPath)) { throw "Audio file not found: $AudioPath" }
 
-# The working copy may lag behind the GitHub foundation branch. Pull only the
-# small orchestration files required by this script instead of changing the
-# user's whole checkout or local changes.
+# Sync the orchestration layer into the working copy without touching unrelated local files.
 $requiredFiles = @(
     'src/pipeline/song_project_engine.py',
     'src/synthesis/synthesis_backend.py',
-    'src/synthesis/hybrid_singing_backend.py'
+    'src/synthesis/hybrid_singing_backend.py',
+    'src/project/project_manager.py',
+    'src/transcription/full_song_transcription_engine.py',
+    'src/trainer/artist_training_engine.py',
+    'src/analysis/clean_vocal_signature_engine.py',
+    'src/analysis/real_note_extraction_engine.py',
+    'src/analysis/syllable_detection_engine.py'
 )
+
 foreach ($relativePath in $requiredFiles) {
     $destination = Join-Path $projectRoot ($relativePath -replace '/', '\\')
     $destinationDir = Split-Path -Parent $destination
-    if (-not (Test-Path $destinationDir)) { New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null }
-    if (-not (Test-Path $destination)) {
-        $uri = "https://raw.githubusercontent.com/alhssane/PhoenixVoiceEngine/foundation-hardening/$relativePath"
-        Write-Host "[Phoenix] Fetching missing project file: $relativePath" -ForegroundColor DarkCyan
-        Invoke-WebRequest -Uri $uri -OutFile $destination
+    if (-not (Test-Path $destinationDir)) {
+        New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
     }
+
+    $uri = "$rawBase/$relativePath"
+    Write-Host "[Phoenix] Syncing $relativePath" -ForegroundColor DarkCyan
+    Invoke-WebRequest -Uri $uri -OutFile $destination
 }
 
 Write-Host '[Phoenix] Installing/validating Phoenix runtime dependencies...' -ForegroundColor Cyan
@@ -47,7 +55,6 @@ audio = Path(r'''__AUDIO__''')
 project_name = r'''__PROJECT__'''
 artist_name = r'''__ARTIST__'''
 
-# Guarantee that the repository root is importable regardless of the caller's cwd.
 sys.path.insert(0, str(root))
 
 from src.pipeline.song_project_engine import SongProjectEngine
