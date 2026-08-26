@@ -19,7 +19,6 @@ SAMPLE_RATE = 16000
 BLANK_TOKEN = "[PAD]"
 MIN_CONFIDENCE = 0.25
 
-# Epitran Arabic IPA -> the phoneme inventory used by the Arabic CTC model.
 IPA_MAP = {
     "ʔ": "<", "ء": "<",
     "b": "b", "t": "t", "d": "d", "k": "k", "q": "q",
@@ -44,9 +43,8 @@ def norm_spaces(text: str) -> str:
 def epitran_to_model_tokens(text: str, epi) -> list[str]:
     tokens: list[str] = []
     words = [w for w in norm_spaces(text).split(" ") if w]
-    for wi, word in enumerate(words):
+    for word in words:
         ipa = epi.transliterate(word, normpunc=True)
-        ipa = ipa.replace("ˤ", "ˤ")
         i = 0
         local: list[str] = []
         while i < len(ipa):
@@ -100,7 +98,6 @@ def token_vocabulary(processor) -> dict[str, int]:
 
 
 def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: int) -> list[tuple[int, int]]:
-    """Viterbi CTC forced alignment. Returns (target_index, frame_index)."""
     if not target_ids:
         raise ValueError("Empty target sequence")
     t_steps, _ = log_probs.shape
@@ -111,10 +108,8 @@ def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: i
     neg_inf = -1e30
     dp = np.full((t_steps, s_states), neg_inf, dtype=np.float32)
     back = np.full((t_steps, s_states), -1, dtype=np.int16)
-
     dp[0, 0] = float(log_probs[0, blank_id].item())
     dp[0, 1] = float(log_probs[0, target_ids[0]].item())
-
     for t in range(1, t_steps):
         frame = log_probs[t]
         for s in range(s_states):
@@ -128,12 +123,10 @@ def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: i
                 best_prev = s - 2
             dp[t, s] = best + float(frame[ext[s]].item())
             back[t, s] = best_prev
-
     end_candidates = [s_states - 1, s_states - 2]
     end_state = max(end_candidates, key=lambda s: dp[-1, s])
     if dp[-1, end_state] <= neg_inf / 2:
         raise RuntimeError("CTC target cannot be aligned to the audio")
-
     states = [end_state]
     s = end_state
     for t in range(t_steps - 1, 0, -1):
@@ -142,13 +135,11 @@ def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: i
             raise RuntimeError("CTC backtrace failed")
         states.append(s)
     states.reverse()
-
     pairs: list[tuple[int, int]] = []
     for t, state in enumerate(states):
         token = ext[state]
         if token != blank_id:
-            target_idx = state // 2
-            pairs.append((target_idx, t))
+            pairs.append((state // 2, t))
     return pairs
 
 
@@ -188,13 +179,14 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
     model = AutoModelForCTC.from_pretrained(MODEL_ID, torch_dtype=dtype)
     model.to(device)
     model.eval()
+    model_input_dtype = next(model.parameters()).dtype
     vocab = token_vocabulary(processor)
     blank_id = vocab.get(BLANK_TOKEN, int(getattr(model.config, "pad_token_id", 0)))
     epi = Epitran("ara-Arab")
 
     final_rows = []
     diagnostics = []
-    hop_s = 0.02  # Wav2Vec2 XLS-R feature stride is approximately 20 ms.
+    hop_s = 0.02
 
     for row in rows:
         name = row["name"]
@@ -216,7 +208,7 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
             sr = SAMPLE_RATE
         duration = len(audio) / sr
         inputs = processor(audio, sampling_rate=sr, return_tensors="pt")
-        input_values = inputs.input_values.to(device)
+        input_values = inputs.input_values.to(device=device, dtype=model_input_dtype)
         with torch.inference_mode():
             logits = model(input_values).logits[0].float().log_softmax(-1).cpu()
         target_ids = [vocab[p] for p in target]
@@ -256,6 +248,7 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
         "status": status,
         "model": MODEL_ID,
         "device": device,
+        "model_input_dtype": str(model_input_dtype),
         "source_stage1": str(stage1),
         "source_stage2": str(stage2),
         "segment_count": len(rows),
