@@ -24,8 +24,9 @@ def main() -> None:
     config = Path(args.config).resolve()
     binary = Path(args.binary).resolve()
 
-    csv_path = raw / 'raw' / 'transcriptions.csv'
-    wavs = raw / 'raw' / 'wavs'
+    raw_data_dir = raw / 'raw'
+    csv_path = raw_data_dir / 'transcriptions.csv'
+    wavs = raw_data_dir / 'wavs'
     phones_path = raw / 'phonemes.txt'
     report_path = raw / 'dataset_stage5.json'
 
@@ -65,15 +66,11 @@ def main() -> None:
             raise RuntimeError(f'Unsupported phones in {name}: {sorted(set(bad))}')
 
     test_prefixes = [r['name'] for r in rows[-2:]] if len(rows) >= 3 else [rows[-1]['name']]
-    raw_posix = raw.as_posix()
+    raw_posix = raw_data_dir.as_posix()
     binary_posix = binary.as_posix()
 
     dictionary = config.parent / 'phoenix_arabic_dictionary.txt'
     dictionary.parent.mkdir(parents=True, exist_ok=True)
-    # DiffSinger requires a dictionary file for every declared language. The
-    # acoustic transcriptions already contain phoneme sequences directly; this
-    # compact entry registers the complete Arabic phone inventory for language
-    # `ar` without introducing a word-level lexicon that could alter ph_seq.
     dictionary_line = 'PHOENIX_ARABIC\t' + ' '.join(extra)
     dictionary.write_text(dictionary_line + '\n', encoding='utf-8')
 
@@ -120,6 +117,7 @@ def main() -> None:
         'extra_phoneme_count': len(extra),
         'dictionary_language': 'ar',
         'dictionary': str(dictionary),
+        'raw_data_dir': str(raw_data_dir),
         'config': str(config),
         'binary_data_dir': str(binary),
         'diffsinger': str(ds),
