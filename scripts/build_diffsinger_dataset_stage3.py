@@ -3,10 +3,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import re
 from pathlib import Path
-from typing import Iterable
 
 import librosa
 import numpy as np
@@ -17,14 +15,14 @@ from transformers import AutoModelForCTC, AutoProcessor
 MODEL_ID = "MostafaMaroof/wav2vec2-arabic-phoneme-asr"
 SAMPLE_RATE = 16000
 BLANK_TOKEN = "[PAD]"
-MIN_CONFIDENCE = 0.25
 
+# Model vocabulary uses x for خ and th for ذ/ث in its Halabi-style scheme.
 IPA_MAP = {
     "ʔ": "<", "ء": "<",
     "b": "b", "t": "t", "d": "d", "k": "k", "q": "q",
     "f": "f", "s": "s", "z": "z", "ʃ": "sh", "ʒ": "j",
-    "x": "kh", "χ": "kh", "ɣ": "g", "ɢ": "g",
-    "θ": "th", "ð": "dh", "ħ": "H", "ʕ": "^",
+    "x": "x", "χ": "x", "ɣ": "g", "ɢ": "g",
+    "θ": "th", "ð": "th", "ħ": "H", "ʕ": "^",
     "h": "h", "m": "m", "n": "n", "r": "r", "ɾ": "r",
     "l": "l", "w": "w", "j": "y",
     "a": "a", "i": "i", "u": "u", "e": "e", "o": "o",
@@ -32,8 +30,14 @@ IPA_MAP = {
     "sˤ": "S", "dˤ": "D", "tˤ": "T", "zˤ": "Z",
     "S": "S", "D": "D", "T": "T", "Z": "Z",
 }
-
 MULTI_IPA = ["sˤ", "dˤ", "tˤ", "zˤ", "t͡ʃ", "d͡ʒ", "ʃ", "θ", "ð", "ɣ", "χ", "ħ", "ʕ"]
+VALID_MODEL_TOKENS = {
+    "<", "^", "S", "D", "T", "Z", "a", "aa", "b", "bb", "d", "dd", "f", "ff",
+    "g", "gg", "h", "hh", "H", "i", "ii", "j", "jj", "k", "kk", "l", "ll", "m", "mm",
+    "n", "nn", "p", "pp", "q", "qq", "r", "rr", "s", "sh", "sil", "ss", "t", "th", "tt",
+    "u", "uu", "w", "ww", "x", "xx", "y", "yy", "z", "zz", "|", "A", "AA", "AH", "E", "EE",
+    "I", "II", "U", "UU", "HH", "DD", "SS", "TT", "ZZ", "$", "$$", "*", "**", "<<"
+}
 
 
 def norm_spaces(text: str) -> str:
@@ -42,8 +46,7 @@ def norm_spaces(text: str) -> str:
 
 def epitran_to_model_tokens(text: str, epi) -> list[str]:
     tokens: list[str] = []
-    words = [w for w in norm_spaces(text).split(" ") if w]
-    for word in words:
+    for word in [w for w in norm_spaces(text).split(" ") if w]:
         ipa = epi.transliterate(word, normpunc=True)
         i = 0
         local: list[str] = []
@@ -76,7 +79,7 @@ def epitran_to_model_tokens(text: str, epi) -> list[str]:
             if mapped:
                 local.append(mapped)
             i += 1
-        local = [x for x in local if x in {"<", "^", "S", "D", "T", "Z", "a", "aa", "b", "bb", "d", "dd", "dh", "e", "f", "g", "h", "H", "i", "ii", "j", "k", "kh", "l", "m", "n", "p", "q", "r", "s", "sh", "ss", "t", "tt", "th", "u", "uu", "w", "x", "y", "z", "zz"}]
+        local = [x for x in local if x in VALID_MODEL_TOKENS]
         if local:
             if tokens:
                 tokens.append("|")
@@ -93,8 +96,7 @@ def load_stage1_manifest(stage1: Path) -> list[dict[str, str]]:
 
 
 def token_vocabulary(processor) -> dict[str, int]:
-    vocab = processor.tokenizer.get_vocab()
-    return {str(k): int(v) for k, v in vocab.items()}
+    return {str(k): int(v) for k, v in processor.tokenizer.get_vocab().items()}
 
 
 def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: int) -> list[tuple[int, int]]:
@@ -123,10 +125,7 @@ def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: i
                 best_prev = s - 2
             dp[t, s] = best + float(frame[ext[s]].item())
             back[t, s] = best_prev
-    end_candidates = [s_states - 1, s_states - 2]
-    end_state = max(end_candidates, key=lambda s: dp[-1, s])
-    if dp[-1, end_state] <= neg_inf / 2:
-        raise RuntimeError("CTC target cannot be aligned to the audio")
+    end_state = max((s_states - 1, s_states - 2), key=lambda s: dp[-1, s])
     states = [end_state]
     s = end_state
     for t in range(t_steps - 1, 0, -1):
@@ -135,15 +134,10 @@ def ctc_forced_align(log_probs: torch.Tensor, target_ids: list[int], blank_id: i
             raise RuntimeError("CTC backtrace failed")
         states.append(s)
     states.reverse()
-    pairs: list[tuple[int, int]] = []
-    for t, state in enumerate(states):
-        token = ext[state]
-        if token != blank_id:
-            pairs.append((state // 2, t))
-    return pairs
+    return [(state // 2, t) for t, state in enumerate(states) if ext[state] != blank_id]
 
 
-def fit_token_sequence_to_frames(pairs: list[tuple[int, int]], token_count: int, hop_s: float, audio_duration: float) -> list[dict[str, float | int]]:
+def fit_token_sequence_to_frames(pairs: list[tuple[int, int]], token_count: int, hop_s: float, audio_duration: float) -> list[dict[str, float | int | bool]]:
     buckets: list[list[int]] = [[] for _ in range(token_count)]
     for idx, frame in pairs:
         if 0 <= idx < token_count:
@@ -165,29 +159,23 @@ def fit_token_sequence_to_frames(pairs: list[tuple[int, int]], token_count: int,
 
 def build(stage1: Path, stage2: Path, output: Path) -> dict:
     from epitran import Epitran
-
     rows = load_stage1_manifest(stage1)
     output.mkdir(parents=True, exist_ok=True)
     phones_dir = output / "phones"
     phones_dir.mkdir(exist_ok=True)
     f0_dir = output / "f0"
     f0_dir.mkdir(exist_ok=True)
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
     processor = AutoProcessor.from_pretrained(MODEL_ID)
-    model = AutoModelForCTC.from_pretrained(MODEL_ID, torch_dtype=dtype)
+    model = AutoModelForCTC.from_pretrained(MODEL_ID, dtype=dtype)
     model.to(device)
     model.eval()
-    model_input_dtype = next(model.parameters()).dtype
     vocab = token_vocabulary(processor)
     blank_id = vocab.get(BLANK_TOKEN, int(getattr(model.config, "pad_token_id", 0)))
     epi = Epitran("ara-Arab")
-
-    final_rows = []
-    diagnostics = []
+    final_rows, diagnostics = [], []
     hop_s = 0.02
-
     for row in rows:
         name = row["name"]
         wav = stage1 / "raw" / "wavs" / f"{name}.wav"
@@ -196,7 +184,7 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
             continue
         text = norm_spaces(row.get("words", ""))
         target = epitran_to_model_tokens(text, epi)
-        missing = [p for p in target if p not in vocab and p != "|"]
+        missing = [p for p in target if p != "|" and p not in vocab]
         if missing:
             diagnostics.append({"name": name, "status": "UNSUPPORTED_PHONEMES", "missing": sorted(set(missing))})
             continue
@@ -208,7 +196,7 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
             sr = SAMPLE_RATE
         duration = len(audio) / sr
         inputs = processor(audio, sampling_rate=sr, return_tensors="pt")
-        input_values = inputs.input_values.to(device=device, dtype=model_input_dtype)
+        input_values = inputs.input_values.to(device=device, dtype=dtype)
         with torch.inference_mode():
             logits = model(input_values).logits[0].float().log_softmax(-1).cpu()
         target_ids = [vocab[p] for p in target]
@@ -222,47 +210,24 @@ def build(stage1: Path, stage2: Path, output: Path) -> dict:
         if coverage < 0.80:
             diagnostics.append({"name": name, "status": "LOW_COVERAGE", "coverage": coverage})
             continue
-
-        f0, voiced, _ = librosa.pyin(audio, fmin=70.0, fmax=1200.0, sr=sr, frame_length=2048, hop_length=320)
+        f0, _, _ = librosa.pyin(audio, fmin=70.0, fmax=1200.0, sr=sr, frame_length=2048, hop_length=320)
         f0_path = f0_dir / f"{name}.npy"
         np.save(f0_path, np.nan_to_num(f0, nan=0.0).astype(np.float32))
-
         phone_path = phones_dir / f"{name}.json"
-        phone_payload = {"name": name, "text": text, "phonemes": target, "alignment": aligned, "coverage": coverage, "f0": str(f0_path.relative_to(output))}
-        phone_path.write_text(json.dumps(phone_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
+        phone_path.write_text(json.dumps({"name": name, "text": text, "phonemes": target, "alignment": aligned, "coverage": coverage, "f0": str(f0_path.relative_to(output))}, ensure_ascii=False, indent=2), encoding="utf-8")
         ph_durs = [max(0.001, float(x["duration"])) for x in aligned]
         final_rows.append({"name": name, "ph_seq": " ".join(target), "ph_dur": " ".join(f"{d:.4f}" for d in ph_durs)})
         diagnostics.append({"name": name, "status": "ALIGNED", "coverage": coverage, "phone_count": len(target)})
-
     csv_path = output / "transcriptions.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["name", "ph_seq", "ph_dur"])
-        writer.writeheader()
-        writer.writerows(final_rows)
-
+        writer.writeheader(); writer.writerows(final_rows)
     aligned_count = sum(1 for d in diagnostics if d["status"] == "ALIGNED")
     status = "STAGE3_ALIGNED" if aligned_count == len(rows) and aligned_count > 0 else "STAGE3_PARTIAL"
-    report = {
-        "schema_version": "0.1",
-        "status": status,
-        "model": MODEL_ID,
-        "device": device,
-        "model_input_dtype": str(model_input_dtype),
-        "source_stage1": str(stage1),
-        "source_stage2": str(stage2),
-        "segment_count": len(rows),
-        "aligned_count": aligned_count,
-        "phone_csv": str(csv_path),
-        "diagnostics": diagnostics,
-        "training_allowed": False,
-        "next_gate": "DIFFSINGER_PHONESET_VALIDATION_AND_DATASET_BUILD",
-        "note": "Alignment is Arabic phoneme CTC forced alignment, not MFA TextGrid alignment. Validate phone-set compatibility before training.",
-    }
+    report = {"schema_version": "0.2", "status": status, "model": MODEL_ID, "device": device, "source_stage1": str(stage1), "source_stage2": str(stage2), "segment_count": len(rows), "aligned_count": aligned_count, "phone_csv": str(csv_path), "diagnostics": diagnostics, "training_allowed": False, "next_gate": "DIFFSINGER_PHONESET_VALIDATION_AND_DATASET_BUILD", "note": "Arabic phoneme CTC forced alignment; token mapping follows the published model vocabulary."}
     (output / "dataset_stage3.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("status", "segment_count", "aligned_count", "training_allowed", "next_gate")}, ensure_ascii=False, indent=2))
     return report
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
