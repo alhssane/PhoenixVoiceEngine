@@ -12,7 +12,8 @@ def main() -> int:
         description="Transcribe a complete song with Gemini 3.5 Transcribe and word timestamps."
     )
     ap.add_argument("--source-wav", required=True)
-    ap.add_argument("--output", required=True)
+    ap.add_argument("--output", required=True, help="Detailed Gemini transcript report JSON")
+    ap.add_argument("--words-output", default=None, help="Optional plain words-list JSON for Phoenix pipeline")
     ap.add_argument("--raw-output", default=None)
     ap.add_argument(
         "--language",
@@ -43,6 +44,14 @@ def main() -> int:
         raw_output_path=args.raw_output,
     )
 
+    if args.words_output:
+        words_path = Path(args.words_output).resolve()
+        words_path.parent.mkdir(parents=True, exist_ok=True)
+        words_path.write_text(
+            json.dumps(result["words"], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     print(
         json.dumps(
             {
@@ -52,6 +61,7 @@ def main() -> int:
                 "word_count": result["word_count"],
                 "last_word_end_sec": result["validation"]["last_word_end_sec"],
                 "output": str(Path(args.output).resolve()),
+                "words_output": str(Path(args.words_output).resolve()) if args.words_output else None,
                 "training_allowed": result["training_allowed"],
                 "next_gate": result["next_gate"],
             },
