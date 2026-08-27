@@ -85,11 +85,29 @@ def main() -> int:
         if start < last_end - 1e-6:
             issues.append({"type": "overlap_or_out_of_order", "index": idx, "word": word, "start": start, "previous_end": last_end})
 
-        if any(phrase in word for phrase in FORBIDDEN_PHRASES):
-            issues.append({"type": "forbidden_training_text", "index": idx, "word": word})
-
         last_end = max(last_end, end)
-        normalized.append({"word": word, "start": start, "end": end, "duration": end - start})
+        normalized.append({"word": word, "start": start, "end": end, "duration": end - start, "source_index": idx})
+
+    # Detect forbidden phrases across consecutive transcript records.
+    # This catches phrases such as "اشتركوا" + "في" + "القناة" even when
+    # each word is stored as a separate JSON item.
+    for start_i in range(len(normalized)):
+        for phrase in FORBIDDEN_PHRASES:
+            phrase_words = phrase.split()
+            end_i = start_i + len(phrase_words)
+            if end_i > len(normalized):
+                continue
+            candidate_words = [x["word"] for x in normalized[start_i:end_i]]
+            if candidate_words == phrase_words:
+                issues.append(
+                    {
+                        "type": "forbidden_training_phrase_sequence",
+                        "start_index": normalized[start_i]["source_index"],
+                        "end_index": normalized[end_i - 1]["source_index"],
+                        "phrase": phrase,
+                        "words": candidate_words,
+                    }
+                )
 
     if args.audio_duration is not None:
         if last_end > args.audio_duration + 0.05:
