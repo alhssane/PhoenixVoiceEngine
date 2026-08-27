@@ -1,18 +1,20 @@
 param(
     [Parameter(Mandatory=$false)][string]$DiffSinger = 'D:\PhoenixVoiceEngine\external\DiffSinger-openvpi',
-    [Parameter(Mandatory=$false)][string]$Config = 'D:\PhoenixVoiceEngine\configs\diffsinger\phoenix_arabic_acoustic.yaml',
-    [Parameter(Mandatory=$false)][string]$Binary = 'D:\PhoenixVoiceEngine\datasets\freed_joud_diffsinger_binary'
+    [Parameter(Mandatory=$false)][string]$Config = 'D:\PhoenixVoiceEngine\jobs\freed_joud_full_auto\phoenix_arabic_acoustic.yaml',
+    [Parameter(Mandatory=$false)][string]$Binary = 'D:\PhoenixVoiceEngine\jobs\freed_joud_full_auto\datasets\binary_full_v3',
+    [Parameter(Mandatory=$false)][string]$SongId = 'freed_joud_full_auto'
 )
 
+$ErrorActionPreference = 'Stop'
 $python = 'D:\PhoenixVoiceEngine\.venv_phoenix_svs\Scripts\python.exe'
 $preflight = Join-Path $PSScriptRoot 'stage7_diffusion_smoke.py'
 $train = Join-Path $DiffSinger 'scripts\train.py'
 
-if (-not (Test-Path $python)) { throw "Phoenix SVS Python not found: $python" }
-if (-not (Test-Path $preflight)) { throw "Stage7 preflight not found: $preflight" }
-if (-not (Test-Path $train)) { throw "DiffSinger train.py not found: $train" }
+foreach ($p in @($python, $preflight, $train, $Config, $Binary)) {
+    if (-not (Test-Path $p)) { throw "Required path not found: $p" }
+}
 
-Write-Host '[Phoenix] Stage9-1000: validating binary Dataset integrity...' -ForegroundColor Cyan
+Write-Host "[Phoenix] Stage9-1000: validating binary Dataset integrity for $SongId..." -ForegroundColor Cyan
 & $python $preflight --diffsinger $DiffSinger --config $Config --binary $Binary
 if ($LASTEXITCODE -ne 0) { throw 'Stage9 binary preflight failed.' }
 
@@ -24,7 +26,7 @@ try {
     $env:PYTHONPATH = $DiffSinger
     $env:TORCH_CUDNN_V8_API_ENABLED = '1'
 
-    $expName = 'phoenix_freed_joud_stage9_1000step'
+    $expName = "phoenix_${SongId}_stage9_1000step"
     Write-Host '[Phoenix] Stage9-1000: starting 1000-step DiffSinger training...' -ForegroundColor Cyan
     & $python $train `
         --config $Config `
@@ -39,7 +41,7 @@ finally {
     $env:TORCH_CUDNN_V8_API_ENABLED = $oldCudnn
 }
 
-$work = Join-Path $DiffSinger "checkpoints\phoenix_freed_joud_stage9_1000step"
+$work = Join-Path $DiffSinger "checkpoints\$expName"
 if (-not (Test-Path $work)) { throw "Training completed but checkpoint work directory was not found: $work" }
 
 Write-Host "[Phoenix] Stage9-1000 completed. Experiment: $work" -ForegroundColor Green
