@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$SourceWav,
-    [Parameter(Mandatory=$true)][string]$WordsJson,
+    [Parameter(Mandatory=$false)][string]$WordsJson = '',
     [Parameter(Mandatory=$false)][string]$SongId = 'song_full',
     [Parameter(Mandatory=$false)][string]$ProjectRoot = 'D:\PhoenixVoiceEngine',
     [Parameter(Mandatory=$false)][string]$DiffSinger = 'D:\PhoenixVoiceEngine\external\DiffSinger-openvpi'
@@ -11,23 +11,45 @@ $ErrorActionPreference = 'Stop'
 $python = Join-Path $ProjectRoot '.venv_phoenix_svs\Scripts\python.exe'
 $scriptRoot = Join-Path $ProjectRoot 'scripts'
 
-foreach ($p in @($python, $SourceWav, $WordsJson, $DiffSinger)) {
+foreach ($p in @($python, $SourceWav, $DiffSinger)) {
     if (-not (Test-Path $p)) { throw "Required path not found: $p" }
 }
 
 $jobRoot = Join-Path $ProjectRoot "jobs\$SongId"
 $datasets = Join-Path $jobRoot 'datasets'
 $reports = Join-Path $jobRoot 'reports'
-New-Item -ItemType Directory -Force -Path $datasets,$reports | Out-Null
+$transcriptDir = Join-Path $jobRoot 'transcript'
+New-Item -ItemType Directory -Force -Path $datasets,$reports,$transcriptDir | Out-Null
 
 Write-Host "[Phoenix] Song Pipeline: $SongId" -ForegroundColor Cyan
 Write-Host "[Phoenix] Source: $SourceWav"
-Write-Host "[Phoenix] Lyrics: $WordsJson"
 
 # Audio duration preflight.
 $durationText = & $python -c "import soundfile as sf,sys; print(sf.info(sys.argv[1]).duration)" $SourceWav
 if ($LASTEXITCODE -ne 0) { throw 'Audio duration preflight failed.' }
 $duration = [double]$durationText
+
+# If lyrics/timing are not supplied, extract them automatically from the full
+# song using Gemini 3.5 Transcribe with verbatim word-level timestamps.
+$autoTranscribed = $false
+if ([string]::IsNullOrWhiteSpace($WordsJson)) {
+    $WordsJson = Join-Path $transcriptDir 'gemini_words.json'
+    $geminiReport = Join-Path $transcriptDir 'gemini_transcript.json'
+    $geminiRaw = Join-Path $transcriptDir 'gemini_raw.json'
+    Write-Host '[Phoenix] No WordsJson supplied: automatic Gemini transcription...' -ForegroundColor Cyan
+    & $python (Join-Path $scriptRoot 'transcribe_song_gemini.py') `
+        --source-wav $SourceWav `
+        --output $geminiReport `
+        --words-output $WordsJson `
+        --raw-output $geminiRaw `
+        --language ar-EG
+    if ($LASTEXITCODE -ne 0) { throw "Gemini transcription failed. See: $geminiReport" }
+    $autoTranscribed = $true
+}
+
+if (-not (Test-Path $WordsJson)) { throw "WordsJson not found: $WordsJson" }
+
+Write-Host "[Phoenix] Lyrics/Timing: $WordsJson"
 
 # Transcript safety gate. This catches known contamination, zero-duration
 # words, overlaps and malformed timing before expensive dataset work starts.
@@ -109,6 +131,7 @@ $manifest = [ordered]@{
     source_wav = (Resolve-Path $SourceWav).Path
     words_json = (Resolve-Path $WordsJson).Path
     source_duration_sec = $duration
+    auto_transcribed = $autoTranscribed
     stage1 = $stage1
     stage2 = $stage2
     stage3 = $stage3
