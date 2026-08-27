@@ -102,6 +102,15 @@ Write-Host '[Phoenix] Stage3: forced alignment...' -ForegroundColor Cyan
 & $python (Join-Path $scriptRoot 'build_diffsinger_dataset_stage3.py') --stage1 $stage1 --stage2 $stage2 --output $stage3
 if ($LASTEXITCODE -ne 0) { throw 'Stage3 failed.' }
 
+# Stage4 currently expects the legacy per-job Stage1 directory name when it
+# resolves source WAVs. Create a junction alias to the real Stage1 output so
+# no audio is duplicated and future jobs remain path-compatible.
+$stage4CompatStage1 = Join-Path $datasets 'freed_joud_diffsinger_stage1_full_v3'
+if (-not (Test-Path $stage4CompatStage1)) {
+    New-Item -ItemType Junction -Path $stage4CompatStage1 -Target $stage1 | Out-Null
+    Write-Host "[Phoenix] Stage4 compatibility junction: $stage4CompatStage1 -> $stage1" -ForegroundColor DarkCyan
+}
+
 Write-Host '[Phoenix] Stage4: Arabic phone-set...' -ForegroundColor Cyan
 & $python (Join-Path $scriptRoot 'build_diffsinger_dataset_stage4_ar.py') --stage3 $stage3 --output $stage4
 if ($LASTEXITCODE -ne 0) { throw 'Stage4 failed.' }
@@ -142,6 +151,7 @@ $manifest = [ordered]@{
     source_duration_sec = $duration
     auto_transcribed = $autoTranscribed
     stage2_compat_words = $stage2CompatWords
+    stage4_compat_stage1 = $stage4CompatStage1
     stage1 = $stage1
     stage2 = $stage2
     stage3 = $stage3
