@@ -21,6 +21,7 @@ def resolve_stage3_dir(stage4: Path, explicit: str | None) -> Path:
     dataset_root = stage4.parent
     candidates.extend(
         [
+            dataset_root / "stage3_full_v4",
             dataset_root / "stage3_full_v3",
             dataset_root / "freed_joud_diffsinger_stage3",
             dataset_root / "stage3",
@@ -33,7 +34,7 @@ def resolve_stage3_dir(stage4: Path, explicit: str | None) -> Path:
 
     raise FileNotFoundError(
         "Could not locate Stage3 alignment directory. Expected a sibling "
-        "stage3_full_v3/phones (or pass --stage3 explicitly)."
+        "stage3_full_v4/phones, stage3_full_v3/phones, or pass --stage3 explicitly."
     )
 
 
@@ -98,7 +99,11 @@ def main() -> None:
     if not report_path.exists():
         raise FileNotFoundError(f"Missing Stage4 report: {report_path}")
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    if report.get("status") != "ARABIC_PHONESET_READY":
+    accepted_statuses = {
+        "ARABIC_PHONESET_READY",
+        "ARABIC_CANONICAL_PHONESET_READY",
+    }
+    if report.get("status") not in accepted_statuses:
         raise RuntimeError(
             f"Stage4 Arabic phone-set dataset is not ready for bake: "
             f"status={report.get('status')!r}"
@@ -168,13 +173,14 @@ def main() -> None:
 
     max_error = max(x["coverage_error"] for x in durations_report) if durations_report else 0.0
     result = {
-        "schema_version": "0.7",
+        "schema_version": "0.8",
         "status": "RAW_DATASET_VALIDATED",
         "segment_count": len(rows),
         "wav_count": len(list(wavs.glob("*.wav"))),
         "phone_csv": str(dst_csv),
         "phonemes": str(output / "phonemes.txt"),
         "stage3_dir": str(stage3),
+        "stage4_status": report.get("status"),
         "max_duration_coverage_error_sec": max_error,
         "segments": durations_report,
         "training_allowed": False,
