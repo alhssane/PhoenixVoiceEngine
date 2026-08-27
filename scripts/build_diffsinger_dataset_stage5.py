@@ -12,8 +12,32 @@ import soundfile as sf
 NORMALIZE = {"aa": "a", "ii": "i", "uu": "u", "|": None}
 
 
-def load_stage3_alignment(stage4: Path, name: str) -> tuple[float, float]:
-    stage3 = stage4.parent / "freed_joud_diffsinger_stage3"
+def resolve_stage3_dir(stage4: Path, explicit: str | None) -> Path:
+    """Resolve the Stage3 directory without relying on legacy fixed names."""
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit).resolve())
+
+    dataset_root = stage4.parent
+    candidates.extend(
+        [
+            dataset_root / "stage3_full_v3",
+            dataset_root / "freed_joud_diffsinger_stage3",
+            dataset_root / "stage3",
+        ]
+    )
+
+    for candidate in candidates:
+        if (candidate / "phones").is_dir():
+            return candidate
+
+    raise FileNotFoundError(
+        "Could not locate Stage3 alignment directory. Expected a sibling "
+        "stage3_full_v3/phones (or pass --stage3 explicitly)."
+    )
+
+
+def load_stage3_alignment(stage3: Path, name: str) -> tuple[float, float]:
     path = stage3 / "phones" / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"Missing Stage3 alignment: {path}")
@@ -61,6 +85,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage4", required=True)
     ap.add_argument("--output", required=True)
+    ap.add_argument("--stage3", required=False, default=None)
     args = ap.parse_args()
 
     stage4 = Path(args.stage4).resolve()
@@ -69,15 +94,32 @@ def main() -> None:
     wavs = raw / "wavs"
     wavs.mkdir(parents=True, exist_ok=True)
 
-    report = json.loads((stage4 / "dataset_stage4_ar.json").read_text(encoding="utf-8"))
-    if report.get("status") != "ARABIC_PHONESET_READY" or report.get("segment_count") != 11:
-        raise RuntimeError("Stage4 Arabic phone-set dataset is not ready for bake.")
+    report_path = stage4 / "dataset_stage4_ar.json"
+    if not report_path.exists():
+        raise FileNotFoundError(f"Missing Stage4 report: {report_path}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if report.get("status") != "ARABIC_PHONESET_READY":
+        raise RuntimeError(
+            f"Stage4 Arabic phone-set dataset is not ready for bake: "
+            f"status={report.get('status')!r}"
+        )
 
     src_csv = stage4 / "raw" / "transcriptions.csv"
     src_wavs = stage4 / "raw" / "wavs"
+    if not src_csv.exists():
+        raise FileNotFoundError(f"Missing Stage4 transcription CSV: {src_csv}")
+    if not src_wavs.is_dir():
+        raise FileNotFoundError(f"Missing Stage4 WAV directory: {src_wavs}")
+
     rows = list(csv.DictReader(src_csv.open("r", encoding="utf-8-sig", newline="")))
-    if len(rows) != report["segment_count"]:
-        raise RuntimeError("transcriptions.csv count does not match Stage4 report.")
+    expected_count = int(report.get("segment_count", len(rows)))
+    if expected_count != len(rows):
+        raise RuntimeError(
+            f"transcriptions.csv count does not match Stage4 report: "
+            f"rows={len(rows)} report={expected_count}"
+        )
+
+    stage3 = resolve_stage3_dir(stage4, args.stage3)
 
     durations_report = []
     for row in rows:
@@ -93,7 +135,7 @@ def main() -> None:
         if not src.exists():
             raise FileNotFoundError(src)
 
-        start, end = load_stage3_alignment(stage4, name)
+        start, end = load_stage3_alignment(stage3, name)
         dst = wavs / src.name
         sample_rate, channels, audio_duration = crop_wav(src, dst, start, end)
         phone_duration = float(sum(durs))
@@ -124,14 +166,15 @@ def main() -> None:
     shutil.copy2(stage4 / "phonemes.txt", output / "phonemes.txt")
     shutil.copy2(stage4 / "phone_set.json", output / "phone_set.json")
 
-    max_error = max(x["coverage_error"] for x in durations_report)
+    max_error = max(x["coverage_error"] for x in durations_report) if durations_report else 0.0
     result = {
-        "schema_version": "0.6",
+        "schema_version": "0.7",
         "status": "RAW_DATASET_VALIDATED",
         "segment_count": len(rows),
         "wav_count": len(list(wavs.glob("*.wav"))),
         "phone_csv": str(dst_csv),
         "phonemes": str(output / "phonemes.txt"),
+        "stage3_dir": str(stage3),
         "max_duration_coverage_error_sec": max_error,
         "segments": durations_report,
         "training_allowed": False,
