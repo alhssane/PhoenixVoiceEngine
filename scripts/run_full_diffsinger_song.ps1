@@ -49,7 +49,19 @@ if ([string]::IsNullOrWhiteSpace($WordsJson)) {
 
 if (-not (Test-Path $WordsJson)) { throw "WordsJson not found: $WordsJson" }
 
-Write-Host "[Phoenix] Lyrics/Timing: $WordsJson"
+# Single source-of-truth transcript contract. Every downstream stage receives
+# this canonical UTF-8 file. It repairs the legacy Arabic mojibake pattern
+# before validation, segmentation, phonemization, alignment, or training.
+$inputWordsJson = (Resolve-Path $WordsJson).Path
+$canonicalWordsJson = Join-Path $transcriptDir 'canonical_words.json'
+Write-Host "[Phoenix] Canonicalizing transcript: $inputWordsJson" -ForegroundColor Cyan
+& $python (Join-Path $scriptRoot 'canonicalize_training_transcript.py') `
+    --input $inputWordsJson `
+    --output $canonicalWordsJson
+if ($LASTEXITCODE -ne 0) { throw "Canonical transcript preparation failed: $canonicalWordsJson" }
+$WordsJson = $canonicalWordsJson
+
+Write-Host "[Phoenix] Lyrics/Timing (canonical): $WordsJson"
 
 # Transcript safety gate. This catches known contamination, zero-duration
 # words, overlaps and malformed timing before expensive dataset work starts.
@@ -85,11 +97,23 @@ Write-Host '[Phoenix] Stage1: FULL word-safe segmentation...' -ForegroundColor C
     --output $stage1
 if ($LASTEXITCODE -ne 0) { throw 'Stage1 failed.' }
 
+# Stage1 is a legacy preparation script. Normalize its emitted segment words
+# from the same canonical transcript contract before any later stage consumes
+# them, so a single mojibake bug cannot re-enter the pipeline here.
+$stage1ManifestNormalizer = Join-Path $scriptRoot 'canonicalize_stage1_manifest.py'
+& $python $stage1ManifestNormalizer `
+    --stage1 $stage1 `
+    --words-json $WordsJson
+if ($LASTEXITCODE -ne 0) { throw 'Stage1 transcript contract enforcement failed.' }
+
 # Stage2 in the current legacy preparation code discovers original_words.json
-# through a fixed project glob. Keep the real WordsJson as source-of-truth and
-# create only a per-job compatibility mirror for Stage2. This avoids coupling
-# new songs to a repository-wide original_words.json file.
-$stage2CompatWords = Join-Path $jobRoot 'Projects\auto_generated\lyrics\original_words.json'
+# through a fixed project glob. Keep exactly one compatibility mirror, copied
+# from the canonical transcript, so glob ordering can never select stale text.
+$stage2CompatRoot = Join-Path $jobRoot 'Projects'
+if (Test-Path $stage2CompatRoot) {
+    Remove-Item -LiteralPath $stage2CompatRoot -Recurse -Force
+}
+$stage2CompatWords = Join-Path $stage2CompatRoot 'auto_generated\lyrics\original_words.json'
 New-Item -ItemType Directory -Force -Path (Split-Path $stage2CompatWords) | Out-Null
 Copy-Item -LiteralPath $WordsJson -Destination $stage2CompatWords -Force
 Write-Host "[Phoenix] Stage2 compatibility transcript: $stage2CompatWords" -ForegroundColor DarkCyan
@@ -147,7 +171,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Binary integrity gate failed.' }
 $manifest = [ordered]@{
     song_id = $SongId
     source_wav = (Resolve-Path $SourceWav).Path
+    input_words_json = $inputWordsJson
     words_json = (Resolve-Path $WordsJson).Path
+    canonical_words_json = (Resolve-Path $WordsJson).Path
     source_duration_sec = $duration
     auto_transcribed = $autoTranscribed
     stage2_compat_words = $stage2CompatWords
