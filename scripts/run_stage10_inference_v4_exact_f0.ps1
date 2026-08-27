@@ -21,14 +21,19 @@ foreach ($item in @(
     @{Name='Preparation script';Path=$prep},
     @{Name='Inference script';Path=$infer}
 )) {
-    if (-not (Test-Path -LiteralPath $item.Path)) { throw "$($item.Name) not found: $($item.Path)" }
+    if ([string]::IsNullOrWhiteSpace([string]$item.Path)) {
+        throw "$($item.Name) path is empty."
+    }
+    if (-not (Test-Path -LiteralPath $item.Path)) {
+        throw "$($item.Name) not found: $($item.Path)"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Ds) | Out-Null
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
 Write-Host "[Phoenix] Stage10-V4: exact training F0 backend (Parselmouth) ..." -ForegroundColor Cyan
-& $python $prep --raw $Raw --config $Config --out $Ds
+& $python $prep --diffsinger $DiffSinger --raw $Raw --config $Config --out $Ds
 if ($LASTEXITCODE -ne 0) { throw 'Stage10-V4 DS preparation failed.' }
 
 $old = Get-Location
