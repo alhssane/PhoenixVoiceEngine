@@ -146,7 +146,12 @@ def transcribe_audio(
     client = genai.Client(api_key=api_key)
     upload_copy, temp_dir = _ascii_upload_copy(path)
     try:
-        uploaded = client.files.upload(file=str(upload_copy), config={"display_name": "phoenix_audio"})
+        # Keep every multipart/header-adjacent value ASCII-safe. The actual
+        # source path and Arabic text are preserved only in the JSON report.
+        uploaded = client.files.upload(
+            file=str(upload_copy),
+            config={"display_name": "phoenix_audio"},
+        )
         generation_config: dict[str, Any] = {
             "transcription_config": {
                 "language_codes": language_codes or [],
@@ -182,17 +187,37 @@ def transcribe_audio(
             start = item["start"]
             end = item["end"]
             if end <= start:
-                invalid.append({"index": index, "reason": "non_positive_duration", "word": item["word"]})
+                invalid.append(
+                    {
+                        "index": index,
+                        "reason": "non_positive_duration",
+                        "word": item["word"],
+                    }
+                )
             if start < previous_end - 1e-6:
-                invalid.append({"index": index, "reason": "overlap_or_unsorted", "word": item["word"]})
+                invalid.append(
+                    {
+                        "index": index,
+                        "reason": "overlap_or_unsorted",
+                        "word": item["word"],
+                    }
+                )
             if end > audio_duration + 0.25:
-                invalid.append({"index": index, "reason": "beyond_audio_duration", "word": item["word"]})
+                invalid.append(
+                    {
+                        "index": index,
+                        "reason": "beyond_audio_duration",
+                        "word": item["word"],
+                    }
+                )
             previous_end = max(previous_end, end)
 
         words_valid = not invalid and bool(words)
         result = {
             "schema_version": "phoenix-gemini-transcript-v1",
-            "status": "GEMINI_TRANSCRIPTION_READY" if words_valid else "GEMINI_TRANSCRIPTION_REJECTED",
+            "status": "GEMINI_TRANSCRIPTION_READY"
+            if words_valid
+            else "GEMINI_TRANSCRIPTION_REJECTED",
             "model": MODEL,
             "audio": {
                 "path": str(path),
@@ -216,7 +241,9 @@ def transcribe_audio(
         }
 
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         if raw_output_path:
             raw_path = Path(raw_output_path).resolve()
