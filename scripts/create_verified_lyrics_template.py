@@ -5,6 +5,15 @@ import json
 from pathlib import Path
 
 
+def fix_mojibake(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    try:
+        return text.encode("cp1256").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Create a human-verification template for missing singing lyrics."
@@ -20,18 +29,38 @@ def main() -> int:
     gaps = []
     for i, gap in enumerate(review.get("gaps", [])):
         draft = gap.get("draft_asr") or {}
+        raw_segments = draft.get("segments") or []
         segments = []
-        for j, seg in enumerate(draft.get("segments", [])):
+
+        for j, seg in enumerate(raw_segments):
+            start = float(gap["start_sec"]) + float(seg.get("start", 0.0))
+            end = float(gap["start_sec"]) + float(seg.get("end", 0.0))
+            if end <= start:
+                continue
             segments.append(
                 {
                     "segment_index": j,
-                    "start_sec": float(gap["start_sec"]) + float(seg.get("start", 0.0)),
-                    "end_sec": float(gap["start_sec"]) + float(seg.get("end", 0.0)),
-                    "asr_candidate": seg.get("text", ""),
+                    "start_sec": start,
+                    "end_sec": end,
+                    "asr_candidate": fix_mojibake(seg.get("text", "")),
                     "verified_text": "",
                     "approved": False,
                 }
             )
+
+        # Keep a reviewable segment even when ASR produced no segment.
+        if not segments:
+            segments.append(
+                {
+                    "segment_index": 0,
+                    "start_sec": float(gap["start_sec"]),
+                    "end_sec": float(gap["end_sec"]),
+                    "asr_candidate": "",
+                    "verified_text": "",
+                    "approved": False,
+                }
+            )
+
         gaps.append(
             {
                 "gap_index": i,
@@ -45,7 +74,7 @@ def main() -> int:
         )
 
     payload = {
-        "schema_version": "phoenix-song-verified-lyrics-v1",
+        "schema_version": "phoenix-song-verified-lyrics-v2",
         "status": "VERIFICATION_PENDING",
         "source_review": str(review_path),
         "rules": {
@@ -69,6 +98,7 @@ def main() -> int:
             {
                 "status": payload["status"],
                 "gap_count": len(gaps),
+                "segment_count": sum(len(g["segments"]) for g in gaps),
                 "output": str(output_path),
                 "next_gate": "HUMAN_VERIFY_AND_APPROVE_MISSING_LYRICS",
             },
