@@ -4,7 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-FORBIDDEN = {"اشتركوا في القناة", "اشتركوا بالقناة"}
+FORBIDDEN = (
+    ("اشتركوا", "في", "القناة"),
+)
 
 
 def fix_mojibake(text: str) -> str:
@@ -15,7 +17,7 @@ def fix_mojibake(text: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Build an auditable master lyric manifest from verified source words.")
+    ap = argparse.ArgumentParser(description="Build an auditable master lyric manifest from source words.")
     ap.add_argument("--words-json", required=True)
     ap.add_argument("--output", required=True)
     ap.add_argument("--source-duration", type=float, required=True)
@@ -27,28 +29,45 @@ def main() -> int:
     if not isinstance(data, list) or not data:
         raise RuntimeError("Source words JSON must be a non-empty list.")
 
-    words = []
-    rejected = []
+    normalized = []
     for i, item in enumerate(data):
         if not isinstance(item, dict):
-            rejected.append({"index": i, "reason": "invalid_record"})
+            normalized.append({"source_index": i, "invalid": True})
             continue
-        raw = str(item.get("word", ""))
-        word = fix_mojibake(raw).strip()
-        start = float(item.get("start", 0.0))
-        end = float(item.get("end", 0.0))
-        if word in {"في", "القناة"} and i in {74, 75, 77, 78, 80, 81, 83, 84, 86, 87, 89, 90, 92, 93}:
-            rejected.append({"index": i, "word": word, "reason": "known_contaminated_sequence"})
-            continue
-        if end <= start:
-            rejected.append({"index": i, "word": word, "start": start, "end": end, "reason": "non_positive_duration"})
-            continue
-        if word in FORBIDDEN:
-            rejected.append({"index": i, "word": word, "reason": "forbidden_phrase"})
-            continue
-        words.append({"word": word, "start": start, "end": end, "duration": end-start, "source_index": i, "source": "verified_source"})
+        word = fix_mojibake(str(item.get("word", ""))).strip()
+        try:
+            start = float(item["start"])
+            end = float(item["end"])
+        except (KeyError, TypeError, ValueError):
+            start = end = 0.0
+        normalized.append({"source_index": i, "word": word, "start": start, "end": end, "duration": end - start})
 
-    # Never claim full coverage automatically. Missing singing must be explicitly supplied later.
+    rejected_indices: set[int] = set()
+    rejected = []
+
+    # Reject known contaminated phrase sequences regardless of how they are split into records.
+    for phrase in FORBIDDEN:
+        n = len(phrase)
+        for i in range(len(normalized) - n + 1):
+            words = tuple(normalized[j].get("word", "") for j in range(i, i + n))
+            if words == phrase:
+                idxs = [normalized[j]["source_index"] for j in range(i, i + n)]
+                rejected_indices.update(idxs)
+                rejected.append({"source_start_index": idxs[0], "source_end_index": idxs[-1], "reason": "known_contaminated_sequence", "words": list(phrase)})
+
+    for item in normalized:
+        if item.get("source_index") in rejected_indices:
+            continue
+        if item.get("invalid"):
+            rejected.append({"source_index": item["source_index"], "reason": "invalid_record"})
+            rejected_indices.add(item["source_index"])
+            continue
+        if item["end"] <= item["start"]:
+            rejected.append({"source_index": item["source_index"], "word": item["word"], "start": item["start"], "end": item["end"], "reason": "non_positive_duration"})
+            rejected_indices.add(item["source_index"])
+
+    words = [x for x in normalized if x.get("source_index") not in rejected_indices and not x.get("invalid")]
+
     report = {
         "schema_version": "phoenix-song-lyrics-master-v1",
         "source_words": str(src),
