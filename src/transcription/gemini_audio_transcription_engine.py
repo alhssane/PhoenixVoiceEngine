@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
-
 
 MODEL = "gemini-3.5-transcribe"
 
@@ -28,7 +29,6 @@ def _time_to_seconds(value: Any) -> float | None:
         return float(text[:-2]) / 1000.0
     if text.endswith("s"):
         return float(text[:-1])
-    # Accept simple MM:SS(.mmm) as a defensive fallback.
     if ":" in text:
         parts = text.split(":")
         if len(parts) == 2:
@@ -89,11 +89,23 @@ def extract_word_annotations(interaction: Any) -> list[dict[str, Any]]:
                         "start": start,
                         "end": end,
                         "duration": end - start,
-                        "source": "gemini-3.5-transcribe",
+                        "source": MODEL,
                     }
                 )
     words.sort(key=lambda item: (item["start"], item["end"]))
     return words
+
+
+def _ascii_upload_copy(path: Path) -> tuple[Path, tempfile.TemporaryDirectory[str] | None]:
+    """Return an ASCII-named upload copy when the source filename is not ASCII."""
+    try:
+        path.name.encode("ascii")
+        return path, None
+    except UnicodeEncodeError:
+        tmp = tempfile.TemporaryDirectory(prefix="phoenix_gemini_")
+        upload_path = Path(tmp.name) / f"phoenix_audio{path.suffix.lower() or '.wav'}"
+        shutil.copy2(path, upload_path)
+        return upload_path, tmp
 
 
 def transcribe_audio(
@@ -132,8 +144,9 @@ def transcribe_audio(
         raise RuntimeError(f"Unable to inspect audio: {path}") from exc
 
     client = genai.Client(api_key=api_key)
+    upload_copy, temp_dir = _ascii_upload_copy(path)
     try:
-        uploaded = client.files.upload(file=str(path))
+        uploaded = client.files.upload(file=str(upload_copy))
         generation_config: dict[str, Any] = {
             "transcription_config": {
                 "language_codes": language_codes or [],
@@ -183,6 +196,7 @@ def transcribe_audio(
             "model": MODEL,
             "audio": {
                 "path": str(path),
+                "upload_filename": upload_copy.name,
                 "duration_sec": audio_duration,
                 "sample_rate": sample_rate,
                 "channels": channels,
@@ -218,6 +232,8 @@ def transcribe_audio(
             )
         return result
     finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
         close = getattr(client, "close", None)
         if callable(close):
             close()
