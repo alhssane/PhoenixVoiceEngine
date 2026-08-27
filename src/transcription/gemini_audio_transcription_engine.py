@@ -146,7 +146,7 @@ def transcribe_audio(
     client = genai.Client(api_key=api_key)
     upload_copy, temp_dir = _ascii_upload_copy(path)
     try:
-        uploaded = client.files.upload(file=str(upload_copy))
+        uploaded = client.files.upload(file=str(upload_copy), config={"display_name": "phoenix_audio"})
         generation_config: dict[str, Any] = {
             "transcription_config": {
                 "language_codes": language_codes or [],
@@ -236,4 +236,4 @@ def transcribe_audio(
             temp_dir.cleanup()
         close = getattr(client, "close", None)
         if callable(close):
-            close()
+            client.close()
