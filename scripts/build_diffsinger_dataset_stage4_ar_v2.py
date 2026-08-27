@@ -86,7 +86,8 @@ def main() -> int:
 
     rows.sort(key=lambda item: item["name"])
     csv_path = output / "raw" / "transcriptions.csv"
-    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+    # DiffSinger v2.5 opens this file with encoding='utf-8'. Do not emit a BOM.
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["name", "ph_seq", "ph_dur"])
         writer.writeheader()
         writer.writerows(rows)
