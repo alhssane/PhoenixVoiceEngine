@@ -24,12 +24,7 @@ def f0_to_midi(f0: np.ndarray) -> np.ndarray:
     return 69.0 + 12.0 * np.log2(np.maximum(f0, 1e-6) / 440.0)
 
 
-def load_training_f0(
-    wav: np.ndarray,
-    sr: int,
-    config: Path,
-    diffsinger_root: Path,
-) -> tuple[np.ndarray, int]:
+def load_training_f0(wav: np.ndarray, sr: int, config: Path, diffsinger_root: Path) -> tuple[np.ndarray, int]:
     root = diffsinger_root.resolve()
     config = config.resolve()
     if not root.is_dir():
@@ -37,36 +32,43 @@ def load_training_f0(
     if not config.is_file():
         raise FileNotFoundError(config)
 
-    # Do not depend on the caller's current working directory.
     os.environ["PYTHONPATH"] = str(root)
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    sys.argv = [sys.argv[0], "--config", str(config)]
 
-    from utils.hparams import set_hparams, hparams
-    from utils.binarizer_utils import get_mel_torch, get_pitch_parselmouth
+    old_cwd = Path.cwd()
+    old_argv = sys.argv[:]
+    os.chdir(root)
+    try:
+        # DiffSinger's hparams loader resolves base_config entries relative to cwd.
+        sys.argv = [old_argv[0], "--config", str(config)]
+        from utils.hparams import set_hparams, hparams
+        from utils.binarizer_utils import get_mel_torch, get_pitch_parselmouth
 
-    set_hparams(print_hparams=False)
-    mel = get_mel_torch(
-        wav,
-        sr,
-        num_mel_bins=int(hparams["audio_num_mel_bins"]),
-        hop_size=int(hparams["hop_size"]),
-        win_size=int(hparams["win_size"]),
-        fft_size=int(hparams["fft_size"]),
-        fmin=float(hparams["fmin"]),
-        fmax=float(hparams["fmax"]),
-        device="cpu",
-    )
-    f0, _ = get_pitch_parselmouth(
-        wav,
-        samplerate=sr,
-        length=len(mel),
-        hop_size=int(hparams["hop_size"]),
-        f0_min=float(hparams.get("f0_min", 40.0)),
-        f0_max=float(hparams.get("f0_max", 1100.0)),
-    )
-    return np.asarray(f0, dtype=np.float32), int(len(mel))
+        set_hparams(print_hparams=False)
+        mel = get_mel_torch(
+            wav,
+            sr,
+            num_mel_bins=int(hparams["audio_num_mel_bins"]),
+            hop_size=int(hparams["hop_size"]),
+            win_size=int(hparams["win_size"]),
+            fft_size=int(hparams["fft_size"]),
+            fmin=float(hparams["fmin"]),
+            fmax=float(hparams["fmax"]),
+            device="cpu",
+        )
+        f0, _ = get_pitch_parselmouth(
+            wav,
+            samplerate=sr,
+            length=len(mel),
+            hop_size=int(hparams["hop_size"]),
+            f0_min=float(hparams.get("f0_min", 40.0)),
+            f0_max=float(hparams.get("f0_max", 1100.0)),
+        )
+        return np.asarray(f0, dtype=np.float32), int(len(mel))
+    finally:
+        sys.argv = old_argv
+        os.chdir(old_cwd)
 
 
 def note_for_interval(f0: np.ndarray, sr: int, start: float, dur: float) -> str:
