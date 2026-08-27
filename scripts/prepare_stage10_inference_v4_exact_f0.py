@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
+import sys
 from pathlib import Path
 
 import librosa
@@ -22,12 +24,23 @@ def f0_to_midi(f0: np.ndarray) -> np.ndarray:
     return 69.0 + 12.0 * np.log2(np.maximum(f0, 1e-6) / 440.0)
 
 
-def load_training_f0(wav: np.ndarray, sr: int, config: Path) -> tuple[np.ndarray, int]:
-    root = config.resolve().parents[1]
-    import os
-    import sys
+def load_training_f0(
+    wav: np.ndarray,
+    sr: int,
+    config: Path,
+    diffsinger_root: Path,
+) -> tuple[np.ndarray, int]:
+    root = diffsinger_root.resolve()
+    config = config.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(root)
+    if not config.is_file():
+        raise FileNotFoundError(config)
+
+    # Do not depend on the caller's current working directory.
     os.environ["PYTHONPATH"] = str(root)
-    sys.path.insert(0, str(root))
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
     sys.argv = [sys.argv[0], "--config", str(config)]
 
     from utils.hparams import set_hparams, hparams
@@ -79,11 +92,13 @@ def build_groups(ph_seq: list[str], ph_dur: list[float], notes: list[str]):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phoenix Stage10 V4: exact training F0 backend")
+    ap.add_argument("--diffsinger", required=True)
     ap.add_argument("--raw", required=True)
     ap.add_argument("--config", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    diffsinger = Path(args.diffsinger).resolve()
     raw = Path(args.raw).resolve()
     config = Path(args.config).resolve()
     out = Path(args.out).resolve()
@@ -109,7 +124,7 @@ def main() -> int:
         raise FileNotFoundError(wav)
     y, sr = librosa.load(wav, sr=None, mono=True)
 
-    f0, mel_len = load_training_f0(y, sr, config)
+    f0, mel_len = load_training_f0(y, sr, config, diffsinger)
     notes_per_phone = []
     t = 0.0
     for phone, dur in zip(ph_seq, ph_dur):
