@@ -85,6 +85,15 @@ Write-Host '[Phoenix] Stage1: FULL word-safe segmentation...' -ForegroundColor C
     --output $stage1
 if ($LASTEXITCODE -ne 0) { throw 'Stage1 failed.' }
 
+# Stage2 in the current legacy preparation code discovers original_words.json
+# through a fixed project glob. Keep the real WordsJson as source-of-truth and
+# create only a per-job compatibility mirror for Stage2. This avoids coupling
+# new songs to a repository-wide original_words.json file.
+$stage2CompatWords = Join-Path $jobRoot 'Projects\auto_generated\lyrics\original_words.json'
+New-Item -ItemType Directory -Force -Path (Split-Path $stage2CompatWords) | Out-Null
+Copy-Item -LiteralPath $WordsJson -Destination $stage2CompatWords -Force
+Write-Host "[Phoenix] Stage2 compatibility transcript: $stage2CompatWords" -ForegroundColor DarkCyan
+
 Write-Host '[Phoenix] Stage2: Arabic provisional phonemes + pitch...' -ForegroundColor Cyan
 & $python (Join-Path $scriptRoot 'build_diffsinger_dataset_stage2.py') $stage1 $stage2
 if ($LASTEXITCODE -ne 0) { throw 'Stage2 failed.' }
@@ -132,6 +141,7 @@ $manifest = [ordered]@{
     words_json = (Resolve-Path $WordsJson).Path
     source_duration_sec = $duration
     auto_transcribed = $autoTranscribed
+    stage2_compat_words = $stage2CompatWords
     stage1 = $stage1
     stage2 = $stage2
     stage3 = $stage3
