@@ -45,6 +45,11 @@ $coverage = Join-Path $reports 'transcript_coverage_audit.json'
 & $python (Join-Path $scripts 'audit_transcript_coverage.py') --source-wav $SourceWav --words-json $canonicalWords --output $coverage
 if ($LASTEXITCODE -ne 0) { throw 'Transcript coverage failed.' }
 
+$phoneAudit = Join-Path $reports 'arabic_phone_contract_audit.json'
+Write-Host '[Phoenix] Arabic phone-contract gate...' -ForegroundColor Cyan
+& $python (Join-Path $scripts 'audit_arabic_phoneme_contract.py') --words-json $canonicalWords --output $phoneAudit
+if ($LASTEXITCODE -ne 0) { throw 'Arabic phone-contract gate failed.' }
+
 $stage1 = Join-Path $datasets 'stage1_full_v4'
 $stage3 = Join-Path $datasets 'stage3_full_v4'
 $stage4 = Join-Path $datasets 'stage4_ar_full_v4'
@@ -92,9 +97,11 @@ Write-Host '[Phoenix] Final binary integrity gate...' -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw 'Binary integrity gate failed.' }
 
 $manifest = [ordered]@{
+    schema_version = '2.0'
     song_id = $SongId
     source_wav = (Resolve-Path $SourceWav).Path
-    words_json = (Resolve-Path $canonicalWords).Path
+    source_transcript = (Resolve-Path $WordsJson).Path
+    canonical_transcript = (Resolve-Path $canonicalWords).Path
     source_duration_sec = $duration
     stage1 = $stage1
     stage3 = $stage3
@@ -104,7 +111,9 @@ $manifest = [ordered]@{
     binary = $binary
     transcript_validation = $validation
     transcript_coverage_audit = $coverage
+    arabic_phone_contract_audit = $phoneAudit
     phoneme_contract = 'src/arabic/phoneme_contract.py'
+    legacy_stage2_is_not_training_source = $true
     status = 'DATASET_READY_FOR_TRAINING'
     training_started = $false
 }
