@@ -10,7 +10,6 @@ $ErrorActionPreference = 'Stop'
 
 $python = Join-Path $ProjectRoot '.venv_phoenix_svs\Scripts\python.exe'
 $scriptRoot = Join-Path $ProjectRoot 'scripts'
-$configTemplate = Join-Path $ProjectRoot 'configs\diffsinger\phoenix_arabic_acoustic.yaml'
 
 foreach ($p in @($python, $SourceWav, $WordsJson, $DiffSinger)) {
     if (-not (Test-Path $p)) { throw "Required path not found: $p" }
@@ -30,13 +29,23 @@ $durationText = & $python -c "import soundfile as sf,sys; print(sf.info(sys.argv
 if ($LASTEXITCODE -ne 0) { throw 'Audio duration preflight failed.' }
 $duration = [double]$durationText
 
-# Transcript safety gate. It rejects known contamination, zero-duration words,
-# overlaps and malformed timing BEFORE any expensive dataset work starts.
+# Transcript safety gate. This catches known contamination, zero-duration
+# words, overlaps and malformed timing before expensive dataset work starts.
 $validator = Join-Path $scriptRoot 'validate_training_transcript.py'
 $transcriptReport = Join-Path $reports 'transcript_validation.json'
 & $python $validator --words-json $WordsJson --audio-duration $duration --repair-mojibake --output $transcriptReport
 if ($LASTEXITCODE -ne 0) {
     throw "Transcript gate failed. See: $transcriptReport"
+}
+
+# Full-source coverage gate. This detects untimed regions that contain likely
+# singing, preventing a Dataset that silently trains on only a small fraction
+# of the supplied recording.
+$coverageAudit = Join-Path $scriptRoot 'audit_transcript_coverage.py'
+$coverageReport = Join-Path $reports 'transcript_coverage_audit.json'
+& $python $coverageAudit --source-wav $SourceWav --words-json $WordsJson --output $coverageReport
+if ($LASTEXITCODE -ne 0) {
+    throw "Coverage gate failed: likely singing exists outside transcript timing. See: $coverageReport"
 }
 
 $stage1 = Join-Path $datasets 'stage1_full_v3'
@@ -74,7 +83,7 @@ Write-Host '[Phoenix] Stage6: DiffSinger config...' -ForegroundColor Cyan
 & $python (Join-Path $scriptRoot 'prepare_diffsinger_stage6.py') --raw $stage5 --diffsinger $DiffSinger --config $config --binary $binary
 if ($LASTEXITCODE -ne 0) { throw 'Stage6 failed.' }
 
-# Run binarization from the DiffSinger working directory so relative base configs resolve.
+# Binarize from the DiffSinger working directory so relative base configs resolve.
 $oldPwd = Get-Location
 $oldPyPath = $env:PYTHONPATH
 try {
@@ -107,6 +116,8 @@ $manifest = [ordered]@{
     stage5 = $stage5
     config = $config
     binary = $binary
+    transcript_validation = $transcriptReport
+    transcript_coverage_audit = $coverageReport
     status = 'DATASET_READY_FOR_TRAINING'
     training_started = $false
 }
