@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$false)][string]$DiffSinger = 'D:\PhoenixVoiceEngine\external\DiffSinger-openvpi',
     [Parameter(Mandatory=$false)][string]$Config = 'D:\PhoenixVoiceEngine\configs\diffsinger\phoenix_arabic_acoustic.yaml',
-    [Parameter(Mandatory=$false)][string]$Binary = 'D:\PhoenixVoiceEngine\datasets\freed_joud_diffsinger_binary'
+    [Parameter(Mandatory=$false)][string]$Binary = 'D:\PhoenixVoiceEngine\datasets\freed_joud_diffsinger_binary_full_v3'
 )
 
 $python = 'D:\PhoenixVoiceEngine\.venv_phoenix_svs\Scripts\python.exe'
