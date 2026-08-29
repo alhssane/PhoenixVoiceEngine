@@ -237,7 +237,7 @@ def main() -> int:
     result = frontend.convert(args.text)
     syllables: list[Syllable] = []
     for word_index, item in enumerate(result.words):
-        syllables.extend(syllabify_word(list(item.canonical_phones), word_index))
+        syllables.extend(syllabify_word(list(item.phones), word_index))
 
     dictionary = None
     dictionary_path = args.dictionary.resolve()
