@@ -5,6 +5,10 @@ The tool copies an existing YAML configuration and changes only explicitly
 requested scalar keys. It refuses to overwrite the source, verifies that
 position embeddings are disabled, and writes a machine-readable manifest.
 
+DiffSinger configs commonly inherit settings through ``base_config``. Therefore
+an override such as ``use_pos_embed: false`` is allowed to be absent from the
+child config and is inserted at top level so it overrides the inherited value.
+
 This is an ablation/generalization experiment, not a claim that a tiny dataset
 is sufficient for production lyric replacement.
 """
@@ -19,7 +23,10 @@ from pathlib import Path
 from typing import Any
 
 
-SCALAR_RE = re.compile(r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_]*)(?P<sep>\s*:\s*)(?P<value>.*?)(?P<comment>\s+#.*)?$")
+SCALAR_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_]*)(?P<sep>\s*:\s*)"
+    r"(?P<value>.*?)(?P<comment>\s+#.*)?$"
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -37,7 +44,9 @@ def yaml_scalar(value: Any) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
-def replace_top_level_scalar(text: str, key: str, value: Any, *, required: bool) -> tuple[str, int]:
+def replace_top_level_scalar(
+    text: str, key: str, value: Any, *, required: bool
+) -> tuple[str, int]:
     lines = text.splitlines(keepends=True)
     hits = 0
     replacement = yaml_scalar(value)
@@ -80,7 +89,9 @@ def main() -> int:
     parser.add_argument("--base-config", required=True, type=Path)
     parser.add_argument("--output-config", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
-    parser.add_argument("--experiment-name", default="phoenix_freed_joud_generalization_v1")
+    parser.add_argument(
+        "--experiment-name", default="phoenix_freed_joud_generalization_v1"
+    )
     parser.add_argument("--binary-data-dir", default=None)
     parser.add_argument("--work-dir", default=None)
     args = parser.parse_args()
@@ -97,26 +108,41 @@ def main() -> int:
     source_bytes = source.read_bytes()
     text = source_bytes.decode("utf-8-sig")
 
-    # This key must already exist so a misspelling or incompatible config cannot
-    # silently create an unused option.
-    text, _ = replace_top_level_scalar(text, "use_pos_embed", False, required=True)
+    # Child configs inherit values from base_config. Explicitly writing this at
+    # top level is the intended override when the base config owns the key.
+    text, _ = replace_top_level_scalar(text, "use_pos_embed", False, required=False)
 
-    # Experiment identity keys vary across DiffSinger configurations. Update a
-    # key only when the caller explicitly supplies it or when it already exists.
+    # Experiment identity keys vary across DiffSinger configurations. If no
+    # identity key exists in the child, add exp_name explicitly so the new run
+    # cannot silently share the old experiment namespace.
     exp_key = None
     for candidate in ("exp_name", "experiment_name"):
         if read_top_level_scalar(text, candidate) is not None:
-            text, _ = replace_top_level_scalar(text, candidate, args.experiment_name, required=True)
+            text, _ = replace_top_level_scalar(
+                text, candidate, args.experiment_name, required=True
+            )
             exp_key = candidate
             break
+    if exp_key is None:
+        text, _ = replace_top_level_scalar(
+            text, "exp_name", args.experiment_name, required=False
+        )
+        exp_key = "exp_name"
 
     if args.binary_data_dir is not None:
-        text, _ = replace_top_level_scalar(text, "binary_data_dir", args.binary_data_dir, required=True)
+        text, _ = replace_top_level_scalar(
+            text, "binary_data_dir", args.binary_data_dir, required=False
+        )
     if args.work_dir is not None:
-        text, _ = replace_top_level_scalar(text, "work_dir", args.work_dir, required=True)
+        text, _ = replace_top_level_scalar(
+            text, "work_dir", args.work_dir, required=False
+        )
 
     if read_top_level_scalar(text, "use_pos_embed") != "false":
         raise RuntimeError("Failed to disable use_pos_embed")
+
+    if read_top_level_scalar(text, exp_key) != yaml_scalar(args.experiment_name):
+        raise RuntimeError(f"Failed to set {exp_key}")
 
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +170,9 @@ def main() -> int:
             "Eleven training samples remain insufficient for production lyric replacement."
         ),
     }
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0
 
