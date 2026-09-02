@@ -8,8 +8,8 @@ def test_normalize_arabic():
 
 def test_group_words():
     words = [{"start":0,"end":2},{"start":2.1,"end":4}]
-    assert len(group_words(words, 4.1)) == 1
-    assert len(group_words(words, 3.0)) == 2
+    assert len(group_words(words, 4.1, 1.0)) == 1
+    assert len(group_words(words, 3.0, 1.0)) == 2
 
 def test_load_v11(tmp_path: Path):
     p=tmp_path/"master.tsv"
