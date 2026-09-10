@@ -38,11 +38,14 @@ class G2PFrontendResult:
 
 class PhoenixArabicG2PFrontend:
     """
-    Production-facing bridge for the real Phoenix Arabic G2P v02 module.
+    Production-facing bridge for the real Phoenix Arabic G2P module.
 
-    The frontend deliberately keeps G2P separate from DiffSinger. It converts
-    Arabic text -> eSpeak/Phoenix IPA -> the shared Phoenix canonical phone
-    contract. It does not mutate any DiffSinger checkpoint or vocabulary.
+    G2P is deliberately kept separate from DiffSinger. The frontend converts
+    Arabic text -> Phoenix G2P output -> the shared Phoenix canonical phone
+    contract. It does not mutate a DiffSinger checkpoint or vocabulary.
+
+    The project-wide current runtime default is v03. A different installed
+    version must be selected explicitly through PHOENIX_ARABIC_G2P_MODULE_PATH.
     """
 
     def __init__(
@@ -53,7 +56,7 @@ class PhoenixArabicG2PFrontend:
             module_path
             or os.environ.get(
                 "PHOENIX_ARABIC_G2P_MODULE_PATH",
-                r"D:\PhoenixVoiceEngine\external\YingMusic-Singer-Plus\phoenix_arabic_g2p_v02.py",
+                r"D:\PhoenixVoiceEngine\external\YingMusic-Singer-Plus\phoenix_arabic_g2p_v03.py",
             )
         )
         self._module: Any | None = None
@@ -68,7 +71,7 @@ class PhoenixArabicG2PFrontend:
             raise PhoenixG2PError(f"Phoenix G2P module not found: {self.module_path}")
 
         spec = importlib.util.spec_from_file_location(
-            "phoenix_arabic_g2p_v02_runtime", self.module_path
+            "phoenix_arabic_g2p_runtime", self.module_path
         )
         if spec is None or spec.loader is None:
             raise PhoenixG2PError(f"Cannot load Phoenix G2P module: {self.module_path}")
@@ -82,7 +85,7 @@ class PhoenixArabicG2PFrontend:
         fn = getattr(module, "phonemize_arabic", None)
         if not callable(fn):
             raise PhoenixG2PError(
-                "Phoenix G2P v02 must expose callable phonemize_arabic(text)."
+                "Phoenix Arabic G2P must expose callable phonemize_arabic(text)."
             )
 
         self._module = module
@@ -99,9 +102,8 @@ class PhoenixArabicG2PFrontend:
         except Exception as exc:  # pragma: no cover - runtime dependency surface
             raise PhoenixG2PError(f"Phoenix G2P failed for {clean!r}: {exc}") from exc
 
-        # The v02 G2P returns normalized phoneme symbols (including long-vowel
-        # forms such as aː/iː/uː). Reconstruct the IPA string for traceability,
-        # then feed the actual shared Phoenix contract for canonicalization.
+        # Preserve the exact G2P output for traceability, then canonicalize
+        # through the single Phoenix phone contract.
         ipa = " ".join(raw)
         try:
             canonical = tuple(ipa_to_canonical(ipa, word=clean))
@@ -117,8 +119,6 @@ class PhoenixArabicG2PFrontend:
         )
 
     def convert(self, text: str) -> G2PFrontendResult:
-        module = self._load()
-        _ = module  # explicit load gate
         normalized = normalize_arabic_for_phonemization(text)
         words: list[PhoneConversion] = []
         sequence: list[str] = []
