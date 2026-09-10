@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .phoneme_contract import PhoneConversion, ipa_to_canonical, normalize_arabic_for_phonemization
+from .phoneme_contract import (
+    CANONICAL_PHONES,
+    PhoneConversion,
+    ipa_to_canonical,
+    normalize_arabic_for_phonemization,
+)
 
 
 class PhoenixG2PError(RuntimeError):
@@ -40,12 +45,9 @@ class PhoenixArabicG2PFrontend:
     """
     Production-facing bridge for the real Phoenix Arabic G2P module.
 
-    G2P is deliberately kept separate from DiffSinger. The frontend converts
-    Arabic text -> Phoenix G2P output -> the shared Phoenix canonical phone
-    contract. It does not mutate a DiffSinger checkpoint or vocabulary.
-
-    The project-wide current runtime default is v03. A different installed
-    version must be selected explicitly through PHOENIX_ARABIC_G2P_MODULE_PATH.
+    The adapter accepts either canonical Phoenix phone tokens or IPA-like
+    symbols from the external G2P module. Canonical tokens are preserved as-is;
+    IPA output is passed through the shared Phoenix canonicalization contract.
     """
 
     def __init__(
@@ -91,6 +93,26 @@ class PhoenixArabicG2PFrontend:
         self._module = module
         return module
 
+    @staticmethod
+    def _canonicalize_raw(raw: list[str], *, word: str) -> tuple[str, ...]:
+        if not raw:
+            return ()
+
+        # Some Phoenix G2P versions already return canonical tokens such as
+        # ``aa`` or ``sh``. Joining those tokens and treating them as IPA would
+        # split multi-character phones into individual characters. Detect and
+        # preserve a fully canonical token stream first.
+        if all(token in CANONICAL_PHONES for token in raw):
+            return tuple(raw)
+
+        ipa = " ".join(raw)
+        try:
+            return tuple(ipa_to_canonical(ipa, word=word))
+        except Exception as exc:
+            raise PhoenixG2PError(
+                f"Phoenix canonicalization failed for {word!r}: {exc}; raw={raw!r}"
+            ) from exc
+
     def convert_word(self, word: str) -> PhoneConversion:
         module = self._load()
         clean = normalize_arabic_for_phonemization(word)
@@ -98,23 +120,14 @@ class PhoenixArabicG2PFrontend:
             return PhoneConversion(word="", ipa="", phones=())
 
         try:
-            raw = list(module.phonemize_arabic(clean))
+            raw = [str(x).strip() for x in module.phonemize_arabic(clean) if str(x).strip()]
         except Exception as exc:  # pragma: no cover - runtime dependency surface
             raise PhoenixG2PError(f"Phoenix G2P failed for {clean!r}: {exc}") from exc
 
-        # Preserve the exact G2P output for traceability, then canonicalize
-        # through the single Phoenix phone contract.
-        ipa = " ".join(raw)
-        try:
-            canonical = tuple(ipa_to_canonical(ipa, word=clean))
-        except Exception as exc:
-            raise PhoenixG2PError(
-                f"Phoenix canonicalization failed for {clean!r}: {exc}"
-            ) from exc
-
+        canonical = self._canonicalize_raw(raw, word=clean)
         return PhoneConversion(
             word=clean,
-            ipa=ipa,
+            ipa=" ".join(raw),
             phones=canonical,
         )
 
