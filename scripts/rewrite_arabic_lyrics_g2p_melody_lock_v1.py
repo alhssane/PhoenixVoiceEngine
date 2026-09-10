@@ -12,9 +12,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.arabic.g2p_frontend import PhoenixArabicG2PFrontend
+from src.arabic.model_phone_contract import normalize_model_phone, normalize_model_sequence
 
-# Stage4/Stage6 normalize long vowels for the trained DiffSinger vocabulary.
-MODEL_PHONE_NORMALIZATION = {"aa": "a", "ii": "i", "uu": "u"}
 VOWELS = {"a", "i", "u"}
 REST_PHONE = "SP"
 
@@ -35,12 +34,10 @@ def split_tokens(value: str) -> list[str]:
     return [x for x in str(value or "").split() if x]
 
 
-def normalize_model_phone(phone: str) -> str:
-    return MODEL_PHONE_NORMALIZATION.get(phone, phone)
-
-
 def syllabify_word(phones: list[str], word_index: int) -> list[Syllable]:
-    seq = [normalize_model_phone(p) for p in phones if p not in {"|", "SP", "AP"}]
+    seq = list(normalize_model_sequence(
+        p for p in phones if p not in {"|", "SP", "AP"}
+    ))
     if not seq:
         return []
 
@@ -62,12 +59,10 @@ def allocate_duration(total: float, phones: tuple[str, ...]) -> list[float]:
     if total <= 0 or not phones:
         raise ValueError("Invalid syllable duration or empty phone sequence.")
 
-    # Consonants stay short; the vowel carries most of the note.
     weights = [4.0 if p in VOWELS else 0.65 for p in phones]
     scale = total / sum(weights)
     values = [x * scale for x in weights]
 
-    # Avoid zero-length tokens, then repair the last value at 1e-6 precision.
     values = [max(0.001, x) for x in values]
     scale = total / sum(values)
     values = [x * scale for x in values]
@@ -144,10 +139,6 @@ def build_output(
         durations = allocate_duration(slot.duration, syllable.phones)
         ph_seq.extend(syllable.phones)
         ph_dur.extend(durations)
-
-        # ph_num is intentionally one token per item in this direct-acoustic
-        # adapter. Acoustic inference consumes ph_seq/ph_dur/f0 directly;
-        # variance-duration prediction is not part of this V1 path.
         ph_num.extend([1] * len(syllable.phones))
         alignment.append({
             "syllable_index": syllable_index,
@@ -185,7 +176,7 @@ def build_output(
         "ph_num": " ".join(str(x) for x in ph_num),
         "note_seq": " ".join(x.note for x in slots),
         "note_dur": " ".join(f"{x.duration:.6f}" for x in slots),
-        "rewrite_engine": "phoenix_arabic_g2p_v02_melody_lock_v1",
+        "rewrite_engine": "phoenix_arabic_g2p_v03_melody_lock_v2",
         "rewrite_reference": "f0_seq_and_note_timeline_preserved",
         "syllable_count": len(syllables),
         "voiced_note_count": len(voiced_slots),
@@ -193,7 +184,7 @@ def build_output(
         "g2p_module_path": str(
             Path(os.environ.get(
                 "PHOENIX_ARABIC_G2P_MODULE_PATH",
-                r"D:\PhoenixVoiceEngine\external\YingMusic-Singer-Plus\phoenix_arabic_g2p_v02.py",
+                r"D:\PhoenixVoiceEngine\external\YingMusic-Singer-Plus\phoenix_arabic_g2p_v03.py",
             ))
         ),
     })
@@ -204,7 +195,7 @@ def load_dictionary(path: Path) -> set[str]:
     parts = path.read_text(encoding="utf-8").split()
     if parts and parts[0].upper().startswith("PHOENIX_"):
         parts = parts[1:]
-    return set(parts)
+    return {normalize_model_phone(p) for p in parts}
 
 
 def main() -> int:
