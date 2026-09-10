@@ -1,20 +1,22 @@
+from __future__ import annotations
+
+from src.arabic.g2p_frontend import PhoenixArabicG2PFrontend
+
+
 class LyricToPhonemeEngine:
+    """Convert Arabic lyric text to Phoenix canonical phonemes.
 
-    VERSION = "1.0.0"
+    The previous implementation split a word into Arabic characters. That is
+    not a phoneme representation and cannot distinguish sounds such as long
+    vowels, emphatics, or digraphs. Production lyric conversion must use the
+    shared Phoenix Arabic G2P contract.
+    """
 
-    def analyze(
-        self,
-        word,
-    ):
+    VERSION = "2.0.0"
 
-        phonemes = []
+    def __init__(self, frontend: PhoenixArabicG2PFrontend | None = None) -> None:
+        self.frontend = frontend or PhoenixArabicG2PFrontend()
 
-        for letter in word:
-
-            if letter.strip():
-
-                phonemes.append(
-                    letter
-                )
-
-        return phonemes
+    def analyze(self, word: str) -> list[str]:
+        result = self.frontend.convert_word(word)
+        return list(result.phones)
